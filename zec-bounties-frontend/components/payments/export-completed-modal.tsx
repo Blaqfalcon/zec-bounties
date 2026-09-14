@@ -38,7 +38,10 @@ interface ExportRow {
   bountyAmount: number;
   dateCreated: string;
   completedAt?: string | null;
+  paymentTxId?: string | null;
   chain: "MAIN" | "TEST";
+  exportedAt?: string | null;
+  exportedBy?: string | null;
   assigneeUser?: {
     id: string;
     name?: string;
@@ -81,7 +84,8 @@ export function ExportCompletedModal({
   open,
   onOpenChange,
 }: ExportCompletedModalProps) {
-  const { fetchExportCompleted, updateUserOfac } = useBounty();
+  const { fetchExportCompleted, markBountiesExported, updateUserOfac } =
+    useBounty();
 
   const [rows, setRows] = useState<ExportRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -203,7 +207,9 @@ export function ExportCompletedModal({
     setSelectedIds(new Set());
     try {
       const data = await fetchExportCompleted();
-      setRows(data.filter((r: ExportRow) => r.chain === "MAIN"));
+      setRows(
+        data.filter((r: ExportRow) => r.chain === "MAIN" && !r.exportedAt),
+      );
       setLoaded(true);
     } finally {
       setLoading(false);
@@ -286,6 +292,7 @@ export function ExportCompletedModal({
       "ZEC Amount",
       "Network",
       "Payout Address",
+      "Transaction ID",
     ];
     const csvRows = exportRows.map((row) => {
       const recipient = getPrimaryRecipient(row);
@@ -304,6 +311,7 @@ export function ExportCompletedModal({
         row.bountyAmount.toString(),
         row.chain === "MAIN" ? "Mainnet" : "Testnet",
         getPayoutAddress(row) ?? "",
+        row.paymentTxId ?? "",
       ]
         .map(escapeCsv)
         .join(",");
@@ -316,6 +324,14 @@ export function ExportCompletedModal({
     a.download = `completed-bounties-${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+
+    const exportedIds = exportRows.map((r) => r.id);
+    markBountiesExported(exportedIds)
+      .then(() => {
+        setRows((prev) => prev.filter((r) => !exportedIds.includes(r.id)));
+        setSelectedIds(new Set());
+      })
+      .catch((err) => console.error("Failed to mark bounties exported:", err));
   };
 
   const ofacCount = rows.filter(

@@ -1,6 +1,5 @@
 "use client";
 
-import { useTheme } from "next-themes";
 import { useState, useMemo, useEffect, useRef } from "react";
 import { useBounty } from "@/lib/bounty-context";
 import { Button } from "@/components/ui/button";
@@ -13,21 +12,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ArrowUpDown, Zap, Users, Pencil } from "lucide-react";
 import {
-  ArrowUpDown,
-  Zap,
-  Users,
-  Ban,
-  Shield,
-  Pencil,
-  Server,
-  Pickaxe,
-  BookOpen,
-  AlertTriangle,
-  TreeDeciduous,
-  Leaf,
-  HelpCircle,
-} from "lucide-react";
+  BadgeIcons,
+  BadgeSvg,
+  SpecialtyFilterChips,
+  StarFilterChips,
+  AssignableBadgeList,
+} from "@/components/badges/badge-icons";
+import {
+  UaReceiverIcons,
+  UaFilterChips,
+  matchesReceiverFilter,
+  type UaReceiverKey,
+} from "@/components/address/ua-receiver-icons";
+import { getBadgeTooltip, matchesBadgeFilter } from "@/lib/badges";
 import {
   ResponsiveContainer,
   BarChart,
@@ -84,33 +83,6 @@ const CHART_PALETTE = [
   "var(--chart-5)",
   "var(--primary)",
 ];
-
-const BADGE_LABELS: Record<string, string> = {
-  admin: "Admin",
-  "dao-member": "DAO Member",
-  "node-runner": "Node Runner",
-  researcher: "Researcher",
-  designer: "Designer",
-  developer: "Developer",
-  translator: "Translator",
-  writer: "Writer",
-  "hackathon-participant": "Hackathon Participant",
-  "hackathon-winner": "Hackathon Winner",
-  "1-task": "1 Task",
-  "5-tasks": "5 Tasks",
-  "10-tasks": "10 Tasks",
-  "15-tasks": "15 Tasks",
-  "25-tasks": "25 Tasks",
-  "50-tasks": "50 Tasks",
-  miner: "Miner",
-};
-
-const getBadgeTooltip = (badges?: string[]) => {
-  const realBadges = badges?.filter((b) => !b.startsWith("avatar:"));
-  return realBadges && realBadges.length > 0
-    ? realBadges.map((b) => BADGE_LABELS[b] ?? b).join(" • ")
-    : "Regular User";
-};
 
 function UserAvatar({
   user,
@@ -185,10 +157,6 @@ export default function KpisDashboard() {
     setDefaultWallet,
   } = useBounty();
 
-
-  const { resolvedTheme } = useTheme();
-  const badgeFolder = resolvedTheme === "dark" ? "Dark-Mode" : "Light-Mode";
-
   const isAdmin = currentUser?.role === "ADMIN";
 
   const [viewMode, setViewMode] = useState<"public" | "admin">(
@@ -214,7 +182,6 @@ export default function KpisDashboard() {
     [],
   );
 
-  const [avatarColorFilter, setAvatarColorFilter] = useState<string[]>([]);
   const [isBadgeModalOpen, setIsBadgeModalOpen] = useState(false);
   const [selectedUserForBadges, setSelectedUserForBadges] = useState<any>(null);
   const [selectedBadges, setSelectedBadges] = useState<string[]>([]);
@@ -223,100 +190,22 @@ export default function KpisDashboard() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtersRef = useRef<HTMLDivElement>(null);
   const [userFilter, setUserFilter] = useState("");
-  const availableBadges = [
-  { key: "admin", label: "Admin" },
-  { key: "dao-member", label: "DAO Member" },
-  { key: "node-runner", label: "Node Runner" },
-  { key: "researcher", label: "Researcher" },
-  { key: "designer", label: "Designer" },
-  { key: "developer", label: "Developer" },
-  { key: "translator", label: "Translator" },
-  { key: "writer", label: "Writer" },
-  { key: "hackathon-participant", label: "Hackathon Participant" },
-  { key: "hackathon-winner", label: "Hackathon Winner" },
-];
-
-  // Final simplified badge logic
-  // Updated: Supports showing multiple badges at once
-const getBadgeIcons = (
-  completed: number,
-  badges?: string[],
-  role?: string,
-) => {
-  const icons: React.ReactNode[] = [];
-  const list = Array.isArray(badges) ? badges : [];
-
-  const svg = (key: string, title: string) => (
-    <div key={key} title={title}>
-      <img
-        src={`/badges/${badgeFolder}/${key}.svg`}
-        alt={title}
-        className="w-5 h-5 object-contain"
-      />
-    </div>
-  );
-
-  // Manual override forces a specific star
-  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-  let starKey: string | null = null;
-
-  if (avatarOverride) {
-    switch (avatarOverride) {
-      case "avatar:1":  starKey = "1-task"; break;
-      case "avatar:5":  starKey = "5-tasks"; break;
-      case "avatar:10": starKey = "10-tasks"; break;
-      case "avatar:15": starKey = "15-tasks"; break;
-      case "avatar:25": starKey = "25-tasks"; break;
-      case "avatar:50": starKey = "50-tasks"; break;
-    }
-  }
-
-  // No override → use completed count
-  if (!starKey) {
-    if (completed >= 50)      starKey = "50-tasks";
-    else if (completed >= 25) starKey = "25-tasks";
-    else if (completed >= 15) starKey = "15-tasks";
-    else if (completed >= 10) starKey = "10-tasks";
-    else if (completed >= 5)  starKey = "5-tasks";
-    else                      starKey = "1-task";
-  }
-
-  icons.push(svg(starKey, BADGE_LABELS[starKey] || starKey));
-
-  // Specialty badges
-  if (role === "ADMIN" || list.includes("admin")) icons.push(svg("admin", "Admin"));
-  if (list.includes("dao-member")) icons.push(svg("dao-member", "DAO Member"));
-  if (list.includes("node-runner")) icons.push(svg("node-runner", "Node Runner"));
-  if (list.includes("researcher")) icons.push(svg("researcher", "Researcher"));
-  if (list.includes("designer")) icons.push(svg("designer", "Designer"));
-  if (list.includes("developer")) icons.push(svg("developer", "Developer"));
-  if (list.includes("translator")) icons.push(svg("translator", "Translator"));
-  if (list.includes("writer")) icons.push(svg("writer", "Writer"));
-  if (list.includes("hackathon-participant")) icons.push(svg("hackathon-participant", "Hackathon Participant"));
-  if (list.includes("hackathon-winner")) icons.push(svg("hackathon-winner", "Hackathon Winner"));
-  if (list.includes("miner")) icons.push(svg("miner", "Miner"));
-  
-  return icons;
-};
-
   // Dynamic default avatar color based on completed bounties
   const getDefaultAvatarClasses = (
-  completed: number,
-  badges: string[] = [],
-) => {
-  return "bg-muted text-muted-foreground";
-};
+    completed: number,
+    badges: string[] = [],
+  ) => {
+    return "bg-muted text-muted-foreground";
+  };
 
   // === Time Range Filter ===
   const [timeRange, setTimeRange] = useState<"30d" | "90d" | "all">("all");
 
-
   const [badgeFilter, setBadgeFilter] = useState<string[]>([]);
-  const [receiverFilter, setReceiverFilter] = useState<
-    ("none" | "transparent" | "sapling" | "ironwood")[]
-  >([]);
-  const [receiverMode, setReceiverMode] = useState<"all" | "any" | "exact">("all");
-
+  const [receiverFilter, setReceiverFilter] = useState<UaReceiverKey[]>([]);
+  const [receiverMode, setReceiverMode] = useState<"all" | "any" | "exact">(
+    "all",
+  );
 
   const timeRangeConfig = {
     "30d": {
@@ -436,46 +325,46 @@ const getBadgeIcons = (
         let data = await res.json();
 
         if (isAdmin) {
-	  data = data.map((user: any) => {
-	    if (user.UA_address) {
-	      try {
-		const decoded = getAddressReceivers(user.UA_address);
-		return {
-		  ...user,
-		  addressType: decoded.type,
-		  receivers: {
-		    ironwood: !!decoded.ironwood,
-		    sapling: !!decoded.sapling,
-		    transparent: !!decoded.transparent,
-		  },
-		};
-	      } catch {
-		return user;
-	      }
-	    }
-	    // Lone z-address is treated as Sapling-only (app disallows UA + z together)
-	    if (user.z_address) {
-	      return {
-		...user,
-		addressType: "Sapling",
-		receivers: {
-		  ironwood: false,
-		  sapling: true,
-		  transparent: false,
-		},
-	      };
-	    }
-	    return {
-	      ...user,
-	      addressType: user.addressType || "None",
-	      receivers: user.receivers || {
-		ironwood: false,
-		sapling: false,
-		transparent: false,
-	      },
-	    };
-	  });
-	}
+          data = data.map((user: any) => {
+            if (user.UA_address) {
+              try {
+                const decoded = getAddressReceivers(user.UA_address);
+                return {
+                  ...user,
+                  addressType: decoded.type,
+                  receivers: {
+                    ironwood: !!decoded.ironwood,
+                    sapling: !!decoded.sapling,
+                    transparent: !!decoded.transparent,
+                  },
+                };
+              } catch {
+                return user;
+              }
+            }
+            // Lone z-address is treated as Sapling-only (app disallows UA + z together)
+            if (user.z_address) {
+              return {
+                ...user,
+                addressType: "Sapling",
+                receivers: {
+                  ironwood: false,
+                  sapling: true,
+                  transparent: false,
+                },
+              };
+            }
+            return {
+              ...user,
+              addressType: user.addressType || "None",
+              receivers: user.receivers || {
+                ironwood: false,
+                sapling: false,
+                transparent: false,
+              },
+            };
+          });
+        }
         setTopContributors(data);
       } catch (error) {
         console.error(error);
@@ -580,90 +469,16 @@ const getBadgeIcons = (
     });
   }, [topContributors, sortKey, sortDirection]);
 
-
-
-  /** Same rules as the member Users icon color in getBadgeIcons */
-  const effectiveAvatarColorKey = (
-    completed: number = 0,
-    badges?: string[],
-  ) => {
-    const list = Array.isArray(badges) ? badges : [];
-    const override = list.find((b) => b.startsWith("avatar:"));
-    if (override && override !== "avatar:default") {
-      return override;
-    }
-    if (completed >= 60) return "avatar:pink";
-    if (completed >= 20) return "avatar:gold";
-    if (completed >= 10) return "avatar:purple";
-    if (completed >= 5) return "avatar:blue";
-    if (completed >= 1) return "avatar:red";
-    return "avatar:default";
-  };
-
-
   const displayedContributors = useMemo(() => {
-  return sortedContributors.filter((u) => {
-    // Badge filter
-    if (badgeFilter.length) {
-      const badges = Array.isArray(u.badges) ? u.badges : [];
-      const hit = badgeFilter.some(
-        (b) =>
-          badges.includes(b) ||
-          (b === "admin" && (u as any).role === "ADMIN"),
+    return sortedContributors.filter((u) => {
+      if (!matchesBadgeFilter(badgeFilter, u)) return false;
+      return matchesReceiverFilter(
+        (u as any).receivers,
+        receiverFilter,
+        receiverMode,
       );
-      if (!hit) return false;
-    }
-
-    // Avatar color filter — match visible member icon color
-    if (avatarColorFilter.length > 0) {
-      const userAvatar = effectiveAvatarColorKey(
-        u.completed || 0,
-        Array.isArray(u.badges) ? u.badges : [],
-      );
-      if (!avatarColorFilter.includes(userAvatar)) return false;
-    }
-
-    // Receiver filter (admin only)
-    if (viewMode === "admin" && receiverFilter.length) {
-      const r = (u as any).receivers || {};
-      const activeKeys = (
-        ["transparent", "sapling", "ironwood"] as const
-      ).filter((k) => !!r[k]);
-
-      if (receiverFilter.includes("none") && receiverFilter.length === 1) {
-        return activeKeys.length === 0;
-      }
-
-      const flags = receiverFilter.filter((f) => f !== "none") as (
-        | "transparent"
-        | "sapling"
-        | "ironwood"
-      )[];
-
-      if (!flags.length) return true;
-
-      if (receiverMode === "exact") {
-        if (flags.length !== activeKeys.length) return false;
-        if (!flags.every((f) => activeKeys.includes(f))) return false;
-      } else if (receiverMode === "all") {
-        if (!flags.every((f) => !!r[f])) return false;
-      } else {
-        // any
-        if (!flags.some((f) => !!r[f])) return false;
-      }
-    }
-
-    return true;
-  });
-}, [
-  sortedContributors,
-  badgeFilter,
-  avatarColorFilter,
-  receiverFilter,
-  receiverMode,
-  viewMode,
-]);
-
+    });
+  }, [sortedContributors, badgeFilter, receiverFilter, receiverMode]);
 
   const totalBounties = useMemo(
     () => topContributors.reduce((sum, u) => sum + (u.submitted || 0), 0),
@@ -840,101 +655,6 @@ const getBadgeIcons = (
     }
   };
 
-  const getAddressTypeIcons = (receivers?: {
-  ironwood?: boolean;
-  sapling?: boolean;
-  transparent?: boolean;
-}) => {
-  if (
-    !receivers ||
-    (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
-  ) {
-    return [
-      <div
-        key="none"
-        title="No Address"
-        className="flex items-center justify-center"
-      >
-        <Ban className="w-5 h-5 text-red-500" />
-      </div>,
-    ];
-  }
-
-  const icons = [];
-
-  if (receivers.transparent) {
-    icons.push(
-      <div
-        key="transparent"
-        title="Transparent"
-        className="flex items-center justify-center"
-      >
-        <AlertTriangle className="w-5 h-5 text-yellow-400" />
-      </div>,
-    );
-  }
-
-  if (receivers.sapling) {
-    icons.push(
-      <div
-        key="sapling"
-        title="Sapling"
-        className="flex items-center justify-center"
-      >
-        <Leaf className="w-5 h-5 text-emerald-400" />
-      </div>,
-    );
-  }
-
-  if (receivers.ironwood) {
-    icons.push(
-      <div
-        key="ironwood"
-        title="Ironwood"
-        className="flex items-center justify-center w-6 h-6 rounded-full bg-zinc-700 border-2 border-zinc-300"
-      >
-        <TreeDeciduous className="w-3.5 h-3.5 text-zinc-200" />
-      </div>,
-    );
-  }
-
-  return icons;
-};
-
-  // Address Type Helpers
-  const getAddressTypeBadge = (type?: string) => {
-    const normalized = type?.toLowerCase();
-    if (normalized === "none")
-      return "bg-red-500/20 text-red-500 dark:text-red-400 border border-red-500/30";
-    if (normalized?.includes("orchard") && normalized?.includes("sapling"))
-      return "bg-gradient-to-r from-emerald-500 to-blue-500 text-white";
-    if (normalized?.includes("orchard"))
-      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-    if (normalized?.includes("sapling"))
-      return "bg-gradient-to-r from-blue-500 to-indigo-500 text-white";
-    if (normalized?.includes("transparent"))
-      return "bg-gradient-to-r from-slate-500 to-slate-600 text-white";
-    if (normalized === "ua + z" || normalized === "full")
-      return "bg-gradient-to-r from-emerald-500 to-blue-500 text-white";
-    if (normalized === "ua only")
-      return "bg-gradient-to-r from-emerald-500 to-green-600 text-white";
-    return "bg-muted text-muted-foreground";
-  };
-
-  const getDisplayAddressType = (type?: string) => {
-    const normalized = type?.toLowerCase();
-    if (normalized === "none") return "No UA";
-    if (normalized?.includes("orchard") && normalized?.includes("sapling"))
-      return "Orchard + Sapling";
-    if (normalized?.includes("orchard")) return "Orchard";
-    if (normalized?.includes("sapling")) return "Sapling";
-    if (normalized?.includes("transparent")) return "Transparent";
-    if (normalized === "ua + z" || normalized === "full")
-      return "Orchard + Sapling";
-    if (normalized === "ua only") return "Orchard";
-    return type;
-  };
-
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
@@ -982,244 +702,159 @@ const getBadgeIcons = (
               )}
 
               {/* Combined Filters Popover */}
-<div className="relative" ref={filtersRef}>
-  <Button
-    variant="outline"
-    size="sm"
-    onClick={() => setFiltersOpen(!filtersOpen)}
-    className="gap-2 text-muted-foreground font-normal"
-  >
-    <SlidersHorizontal className="w-3.5 h-3.5" />
-    {currentTimeConfig.label} · {chainLabel}
-  </Button>
-  {filtersOpen && (
-    <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
-      {/* Time Range */}
-      <div className="mb-3">
-        <p className="text-xs text-muted-foreground mb-1.5 px-1">
-          Time Range
-        </p>
-        {(["30d", "90d", "all"] as const).map((opt) => (
-          <button
-            key={opt}
-            onClick={() => setTimeRange(opt)}
-            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-          >
-            {timeRangeConfig[opt].label}
-            {timeRange === opt && <Check className="w-3.5 h-3.5" />}
-          </button>
-        ))}
-      </div>
-
-      {/* Chain */}
-      <div className="border-t border-border pt-3">
-        <p className="text-xs text-muted-foreground mb-1.5 px-1">Chain</p>
-        {(
-          [
-            { key: "MAIN", label: "Mainnet" },
-            { key: "TEST", label: "Testnet" },
-            { key: "all", label: "Both" },
-          ] as const
-        ).map((opt) => (
-          <button
-            key={opt.key}
-            onClick={() => setChainFilter(opt.key as ChainFilter)}
-            className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
-          >
-            {opt.label}
-            {chainFilter === opt.key && <Check className="w-3.5 h-3.5" />}
-          </button>
-        ))}
-      </div>
-
-      {/* Badges */}
-      <div className="border-t border-border pt-3">
-        <p className="text-xs text-muted-foreground mb-1.5 px-1">Badges</p>
-        <div className="flex flex-wrap gap-1.5 px-1">
-          {[
-		  { key: "admin", label: "Admin" },
-		  { key: "dao-member", label: "DAO" },
-		  { key: "node-runner", label: "Node" },
-		  { key: "researcher", label: "Research" },
-		  { key: "designer", label: "Designer" },
-		  { key: "developer", label: "Developer" },
-		  { key: "translator", label: "Translator" },
-		  { key: "writer", label: "Writer" },
-		  { key: "hackathon-participant", label: "Hackathon" },
-		  { key: "hackathon-winner", label: "Winner" },
-		  { key: "1-task", label: "1T" },
-		  { key: "5-tasks", label: "5T" },
-		  { key: "10-tasks", label: "10T" },
-		  { key: "15-tasks", label: "15T" },
-		  { key: "25-tasks", label: "25T" },
-		  { key: "50-tasks", label: "50T" },
-		].map((b) => {
-            const active = badgeFilter.includes(b.key);
-            return (
-              <button
-                key={b.key}
-                type="button"
-                onClick={() =>
-                  setBadgeFilter((prev) =>
-                    prev.includes(b.key)
-                      ? prev.filter((k) => k !== b.key)
-                      : [...prev, b.key],
-                  )
-                }
-                className={`px-2 py-0.5 rounded text-xs border ${
-                  active
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "hover:bg-muted border-border"
-                }`}
-              >
-                {b.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Avatar Color */}
-      <div className="border-t border-border pt-3">
-        <p className="text-xs text-muted-foreground mb-1.5 px-1">
-          Badge Color
-        </p>
-        <div className="flex flex-wrap gap-1.5 px-1">
-          {[
-            { key: "avatar:default", label: "Default", color: "bg-muted" },
-            { key: "avatar:red", label: "Red", color: "bg-red-500" },
-            { key: "avatar:blue", label: "Blue", color: "bg-blue-500" },
-            { key: "avatar:purple", label: "Purple", color: "bg-purple-500" },
-            { key: "avatar:gold", label: "Gold", color: "bg-yellow-500" },
-            { key: "avatar:pink", label: "Pink", color: "bg-pink-500" },
-          ].map((c) => {
-            const active = avatarColorFilter.includes(c.key);
-            return (
-              <button
-                key={c.key}
-                type="button"
-                onClick={() =>
-                  setAvatarColorFilter((prev) =>
-                    prev.includes(c.key)
-                      ? prev.filter((k) => k !== c.key)
-                      : [...prev, c.key],
-                  )
-                }
-                className={`flex items-center gap-1.5 px-2 py-0.5 rounded text-xs border ${
-                  active
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "hover:bg-muted border-border"
-                }`}
-              >
-                <span className={`w-2.5 h-2.5 rounded-full ${c.color}`} />
-                {c.label}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* UA receivers (admin only) */}
-      {viewMode === "admin" && (
-        <div className="border-t border-border pt-3">
-          <p className="text-xs text-muted-foreground mb-1.5 px-1">
-            UA receivers
-          </p>
-          <div className="flex flex-wrap gap-1.5 px-1 mb-2">
-            {(
-              [
-                { key: "none", label: "None" },
-                { key: "transparent", label: "T" },
-                { key: "sapling", label: "Sapling" },
-                { key: "ironwood", label: "Ironwood" },
-              ] as const
-            ).map((b) => {
-              const active = receiverFilter.includes(b.key);
-              return (
-                <button
-                  key={b.key}
-                  type="button"
-                  onClick={() =>
-                    setReceiverFilter((prev) =>
-                      prev.includes(b.key)
-                        ? prev.filter((k) => k !== b.key)
-                        : [...prev, b.key],
-                    )
-                  }
-                  className={`px-2 py-0.5 rounded text-xs border ${
-                    active
-                      ? "bg-primary text-primary-foreground border-primary"
-                      : "hover:bg-muted border-border"
-                  }`}
+              <div className="relative" ref={filtersRef}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setFiltersOpen(!filtersOpen)}
+                  className="gap-2 text-muted-foreground font-normal"
                 >
-                  {b.label}
-                </button>
-              );
-            })}
-          </div>
-          <div className="flex gap-1 px-1">
-            <button
-              type="button"
-              onClick={() => setReceiverMode("all")}
-              className={`px-2 py-0.5 rounded text-xs border ${
-                receiverMode === "all"
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "hover:bg-muted border-border"
-              }`}
-            >
-              All
-            </button>
-            <button
-              type="button"
-              onClick={() => setReceiverMode("any")}
-              className={`px-2 py-0.5 rounded text-xs border ${
-                receiverMode === "any"
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "hover:bg-muted border-border"
-              }`}
-            >
-              Any
-            </button>
-            <button
-              type="button"
-              onClick={() => setReceiverMode("exact")}
-              className={`px-2 py-0.5 rounded text-xs border ${
-                receiverMode === "exact"
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "hover:bg-muted border-border"
-              }`}
-            >
-              Exact
-            </button>
-          </div>
-        </div>
-      )}
+                  <SlidersHorizontal className="w-3.5 h-3.5" />
+                  {currentTimeConfig.label} · {chainLabel}
+                </Button>
+                {filtersOpen && (
+                  <div className="absolute right-0 mt-2 w-56 rounded-lg border border-border bg-popover text-popover-foreground shadow-lg p-3 z-20">
+                    {/* Time Range */}
+                    <div className="mb-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Time Range
+                      </p>
+                      {(["30d", "90d", "all"] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          onClick={() => setTimeRange(opt)}
+                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+                        >
+                          {timeRangeConfig[opt].label}
+                          {timeRange === opt && (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
 
-      {/* Clear */}
-      {(badgeFilter.length > 0 ||
-        receiverFilter.length > 0 ||
-        avatarColorFilter.length > 0) && (
-        <div className="border-t border-border pt-2 mt-1">
-          <button
-            type="button"
-            className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
-            onClick={() => {
-              setBadgeFilter([]);
-              setReceiverFilter([]);
-              setAvatarColorFilter([]);
-            }}
-          >
-            Clear filters
-          </button>
-        </div>
-      )}
-    </div>
-  )}
-</div>
-</div>
-</div>
+                    {/* Chain */}
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Chain
+                      </p>
+                      {(
+                        [
+                          { key: "MAIN", label: "Mainnet" },
+                          { key: "TEST", label: "Testnet" },
+                          { key: "all", label: "Both" },
+                        ] as const
+                      ).map((opt) => (
+                        <button
+                          key={opt.key}
+                          onClick={() => setChainFilter(opt.key as ChainFilter)}
+                          className="w-full flex items-center justify-between px-2 py-1.5 rounded text-sm hover:bg-muted"
+                        >
+                          {opt.label}
+                          {chainFilter === opt.key && (
+                            <Check className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+
+                    {/* Badges */}
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Badges
+                      </p>
+                      <div className="px-1">
+                        <SpecialtyFilterChips
+                          compact
+                          value={badgeFilter}
+                          onChange={setBadgeFilter}
+                        />
+                      </div>
+                    </div>
+
+                    {/* Stars — replaces old avatar color filter */}
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        Stars
+                      </p>
+                      <div className="px-1">
+                        <StarFilterChips
+                          value={badgeFilter}
+                          onChange={setBadgeFilter}
+                        />
+                      </div>
+                    </div>
+
+                    {/* UA receivers — admin KPI page only */}
+                    <div className="border-t border-border pt-3">
+                      <p className="text-xs text-muted-foreground mb-1.5 px-1">
+                        UA receivers
+                      </p>
+                      <div className="px-1 mb-2">
+                        <UaFilterChips
+                          value={receiverFilter}
+                          onChange={setReceiverFilter}
+                        />
+                      </div>
+                      <div className="flex gap-1 px-1">
+                        <button
+                          type="button"
+                          onClick={() => setReceiverMode("all")}
+                          className={`px-2 py-0.5 rounded text-xs border ${
+                            receiverMode === "all"
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "hover:bg-muted border-border"
+                          }`}
+                        >
+                          All
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReceiverMode("any")}
+                          className={`px-2 py-0.5 rounded text-xs border ${
+                            receiverMode === "any"
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "hover:bg-muted border-border"
+                          }`}
+                        >
+                          Any
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setReceiverMode("exact")}
+                          className={`px-2 py-0.5 rounded text-xs border ${
+                            receiverMode === "exact"
+                              ? "bg-primary text-primary-foreground border-primary"
+                              : "hover:bg-muted border-border"
+                          }`}
+                        >
+                          Exact
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Clear */}
+                    {(badgeFilter.length > 0 || receiverFilter.length > 0) && (
+                      <div className="border-t border-border pt-2 mt-1">
+                        <button
+                          type="button"
+                          className="w-full text-xs text-muted-foreground hover:text-foreground px-2 py-1"
+                          onClick={() => {
+                            setBadgeFilter([]);
+                            setReceiverFilter([]);
+                          }}
+                        >
+                          Clear filters
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
           {/* Top Stats Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 mb-8">
+          <div className="grid grid-cols-1 imd:grid-cols-4 xl:grid-cols-6 gap-4 mb-8">
             {[
               { label: "Total Bounties", value: totalBounties },
               {
@@ -1308,43 +943,53 @@ const getBadgeIcons = (
                         Submitted <ArrowUpDown className="inline w-4 h-4" />
                       </TableHead>
                       {/* Badges — public; edit control admin-only */}
-			<TableHead>
-			  <div className="flex items-center gap-2">
-			    <span>Badges</span>
-			    {isAdmin && viewMode === "admin" && (
-			      <button
-				onClick={() => {
-				  setSelectedUserForBadges(null);
-				  setSelectedBadges([]);
-				  setIsBadgeModalOpen(true);
-				}}
-				className="p-1 hover:bg-muted rounded transition-colors"
-				title="Manage User Badges"
-			      >
-				<Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
-			      </button>
-			    )}
-			  </div>
-			</TableHead>
-			{viewMode === "admin" && (
-			  <TableHead>Address Type</TableHead>
-			)}
-			{viewMode === "admin" && (
-			  <TableHead
-			    className="text-right cursor-pointer"
-			    onClick={() => toggleSort("totalEarned")}
-			  >
-			    Total ZEC Earned <ArrowUpDown className="inline w-4 h-4" />
-			  </TableHead>
-			)}
-			{viewMode === "admin" && (
-			  <TableHead
-			    className="text-right cursor-pointer"
-			    onClick={() => toggleSort("completionRate")}
-			  >
-			    Completion % <ArrowUpDown className="inline w-4 h-4" />
-			  </TableHead>
-			)}
+                      <TableHead>
+                        <div className="flex items-center gap-2">
+                          <span>Badges</span>
+                          {isAdmin && viewMode === "admin" && (
+                            <button
+                              onClick={() => {
+                                setSelectedUserForBadges(null);
+                                setSelectedBadges([]);
+                                setIsBadgeModalOpen(true);
+                              }}
+                              className="p-1 hover:bg-muted rounded transition-colors"
+                              title="Manage User Badges"
+                            >
+                              <Pencil className="w-4 h-4 text-muted-foreground hover:text-foreground" />
+                            </button>
+                          )}
+                        </div>
+                      </TableHead>
+                      {viewMode === "admin" && (
+                        <TableHead className="w-[7.5rem]">
+                          <span className="flex w-full justify-center">
+                            Address Type
+                          </span>
+                        </TableHead>
+                      )}
+                      {viewMode === "admin" && (
+                        <TableHead
+                          className="cursor-pointer"
+                          onClick={() => toggleSort("totalEarned")}
+                        >
+                          <span className="flex w-full items-center justify-end gap-1">
+                            Total ZEC Earned
+                            <ArrowUpDown className="w-4 h-4" />
+                          </span>
+                        </TableHead>
+                      )}
+                      {viewMode === "admin" && (
+                        <TableHead
+                          className="cursor-pointer"
+                          onClick={() => toggleSort("completionRate")}
+                        >
+                          <span className="flex w-full items-center justify-end gap-1">
+                            Completion %
+                            <ArrowUpDown className="w-4 h-4" />
+                          </span>
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -1375,7 +1020,7 @@ const getBadgeIcons = (
                             {/* Avatar with hover tooltip */}
                             <TableCell>
                               <Link
-                               href={profileHref(user)}
+                                href={profileHref(user)}
                                 className="inline-block hover:opacity-80"
                                 title="View profile"
                               >
@@ -1402,26 +1047,32 @@ const getBadgeIcons = (
                             {/* Badges — public */}
                             <TableCell>
                               <div className="flex items-center gap-1.5">
-                                {getBadgeIcons(user.completed, user.badges, user.role)}
+                                <BadgeIcons
+                                  completed={user.completed}
+                                  badges={user.badges}
+                                  role={user.role}
+                                />
                               </div>
                             </TableCell>
                             {viewMode === "admin" && (
                               <TableCell>
-                                <div className="flex items-center justify-center gap-1.5">
-                                  {getAddressTypeIcons(user.receivers)}
+                                <div className="flex justify-center">
+                                  <UaReceiverIcons receivers={user.receivers} />
                                 </div>
                               </TableCell>
-				)}
-
-				{viewMode === "admin" && (
-				  <TableCell className="text-right font-medium">
-				    {user.totalEarned ? user.totalEarned.toFixed(4) : "0.0000"}
-				  </TableCell>
-				)}
-
-				{viewMode === "admin" && (
-				  <TableCell className="text-right font-medium">{rate}%</TableCell>
-				)}
+                            )}
+                            {viewMode === "admin" && (
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {user.totalEarned
+                                  ? user.totalEarned.toFixed(4)
+                                  : "0.0000"}
+                              </TableCell>
+                            )}
+                            {viewMode === "admin" && (
+                              <TableCell className="text-right font-medium tabular-nums">
+                                {rate}%
+                              </TableCell>
+                            )}
                           </TableRow>
                         );
                       })
@@ -1820,198 +1471,221 @@ const getBadgeIcons = (
           )}
 
           {/* === Badge Management Modal === */}
-{isBadgeModalOpen && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-    <div className="w-full max-w-md rounded-xl bg-popover text-popover-foreground p-6 shadow-xl border border-border">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-xl font-semibold">Manage User Badges</h2>
-        <button
-          onClick={closeBadgeModal}
-          className="text-muted-foreground hover:text-foreground"
-        >
-          ✕
-        </button>
-      </div>
-
-      {/* User Selector - only show if no user is pre-selected */}
-      {!selectedUserForBadges && (
-        <div className="mb-4">
-          <label className="text-sm text-muted-foreground mb-1 block">
-            Select User
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Type to filter users..."
-              value={userFilter}
-              onChange={(e) => setUserFilter(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              autoFocus
-            />
-            <div className="mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
-              {topContributors
-                .filter((u) =>
-                  u.name
-                    .toLowerCase()
-                    .includes(userFilter.toLowerCase().trim()),
-                )
-                .sort((a, b) => a.name.localeCompare(b.name))
-                .map((user) => (
+          {isBadgeModalOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+              <div className="w-full max-w-md max-h-[85vh] rounded-xl bg-popover text-popover-foreground shadow-xl border border-border flex flex-col">
+                <div className="flex items-center justify-between p-6 pb-4 flex-shrink-0">
+                  <h2 className="text-xl font-semibold">Manage User Badges</h2>
                   <button
-                    key={user.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedUserForBadges(user);
-                      setSelectedBadges(user.badges || []);
-                      setUserFilter("");
-                    }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                    onClick={closeBadgeModal}
+                    className="text-muted-foreground hover:text-foreground"
                   >
-                    {user.name}
+                    ✕
                   </button>
-                ))}
-              {topContributors.filter((u) =>
-                u.name
-                  .toLowerCase()
-                  .includes(userFilter.toLowerCase().trim()),
-              ).length === 0 && (
-                <div className="px-3 py-2 text-sm text-muted-foreground">
-                  No users found
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Show user name if already selected */}
-      {selectedUserForBadges && (
-        <div className="mb-4">
-          <p className="text-sm text-muted-foreground mb-1">User</p>
-          <div className="font-medium">
-            {selectedUserForBadges.name}
-          </div>
-        </div>
-      )}
+                {/* Scrollable body */}
+                <div className="flex-1 overflow-y-auto px-6">
+                  {/* User Selector - only show if no user is pre-selected */}
+                  {!selectedUserForBadges && (
+                    <div className="mb-4">
+                      <label className="text-sm text-muted-foreground mb-1 block">
+                        Select User
+                      </label>
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Type to filter users..."
+                          value={userFilter}
+                          onChange={(e) => setUserFilter(e.target.value)}
+                          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                          autoFocus
+                        />
+                        <div className="mt-1 max-h-60 overflow-y-auto rounded-md border border-border bg-popover shadow-md">
+                          {topContributors
+                            .filter((u) =>
+                              u.name
+                                .toLowerCase()
+                                .includes(userFilter.toLowerCase().trim()),
+                            )
+                            .sort((a, b) => a.name.localeCompare(b.name))
+                            .map((user) => (
+                              <button
+                                key={user.id}
+                                type="button"
+                                onClick={() => {
+                                  setSelectedUserForBadges(user);
+                                  setSelectedBadges(user.badges || []);
+                                  setUserFilter("");
+                                }}
+                                className="w-full px-3 py-2 text-left text-sm hover:bg-accent hover:text-accent-foreground"
+                              >
+                                {user.name}
+                              </button>
+                            ))}
+                          {topContributors.filter((u) =>
+                            u.name
+                              .toLowerCase()
+                              .includes(userFilter.toLowerCase().trim()),
+                          ).length === 0 && (
+                            <div className="px-3 py-2 text-sm text-muted-foreground">
+                              No users found
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-      {/* Badges Multi-Select */}
-      {selectedUserForBadges && (
-        <div className="mb-6">
-          <p className="text-sm text-muted-foreground mb-2">Badges</p>
-          <div className="space-y-2">
-            {availableBadges.map((badge) => (
-		  <label
-		    key={badge.key}
-		    className="flex items-center gap-3 rounded-lg border border-border px-3 py-2 hover:bg-muted cursor-pointer"
-		  >
-		    <input
-		      type="checkbox"
-		      checked={selectedBadges.includes(badge.key)}
-		      onChange={() => toggleBadge(badge.key)}
-		      className="h-4 w-4 accent-primary"
-		    />
-		    <div className="flex items-center gap-2">
-		      <img
-			src={`/badges/${badgeFolder}/${badge.key}.svg`}
-			alt={badge.label}
-			className="w-5 h-5 object-contain"
-		      />
-		      <span>{badge.label}</span>
-		    </div>
-		  </label>
-		))}  
-          </div>
-        </div>
-      )}
+                  {/* Show user name if already selected */}
+                  {selectedUserForBadges && (
+                    <div className="mb-4">
+                      <p className="text-sm text-muted-foreground mb-1">User</p>
+                      <div className="font-medium">
+                        {selectedUserForBadges.name}
+                      </div>
+                    </div>
+                  )}
 
-      {/* Avatar Color Override */}
-      {/* Star Override */}
-{selectedUserForBadges && (
-  <div className="mb-6 border-t border-border pt-4">
-    <p className="text-sm text-muted-foreground mb-3">
-      Star Override
-    </p>
-    <div className="space-y-1">
-      {[
-        { value: "avatar:default", label: "Default (based on completed bounties)", star: null },
-        { value: "avatar:1", label: "1 Task", star: "1-task" },
-        { value: "avatar:5", label: "5 Tasks", star: "5-tasks" },
-        { value: "avatar:10", label: "10 Tasks", star: "10-tasks" },
-        { value: "avatar:15", label: "15 Tasks", star: "15-tasks" },
-        { value: "avatar:25", label: "25 Tasks", star: "25-tasks" },
-        { value: "avatar:50", label: "50 Tasks", star: "50-tasks" },
-      ].map((option) => {
-        const isSelected =
-          selectedBadges.includes(option.value) ||
-          (option.value === "avatar:default" &&
-            !selectedBadges.some((b) => b.startsWith("avatar:")));
+                  {/* Badges Multi-Select */}
+                  {selectedUserForBadges && (
+                    <div className="mb-6">
+                      <p className="text-sm text-muted-foreground mb-2">
+                        Badges
+                      </p>
+                      <AssignableBadgeList
+                        selected={selectedBadges}
+                        onToggle={toggleBadge}
+                      />
+                    </div>
+                  )}
 
-        return (
-          <button
-            key={option.value}
-            onClick={() => {
-              const filtered = selectedBadges.filter(
-                (b) => !b.startsWith("avatar:"),
-              );
-              if (option.value !== "avatar:default") {
-                setSelectedBadges([...filtered, option.value]);
-              } else {
-                setSelectedBadges(filtered);
-              }
-            }}
-            className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
-              isSelected
-                ? "bg-muted border border-primary"
-                : "hover:bg-muted/50 border border-transparent"
-            }`}
-          >
-            {option.star ? (
-              <img
-                src={`/badges/${badgeFolder}/${option.star}.svg`}
-                alt={option.label}
-                className="w-5 h-5 object-contain"
-              />
-            ) : (
-              <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
-                <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                  {/* Star Override */}
+                  {selectedUserForBadges && (
+                    <div className="mb-6 border-t border-border pt-4">
+                      <p className="text-sm text-muted-foreground mb-3">
+                        Star Override
+                      </p>
+                      <div className="space-y-1">
+                        {[
+                          {
+                            value: "avatar:default",
+                            label: "Default (based on completed bounties)",
+                            star: null,
+                          },
+                          {
+                            value: "avatar:1",
+                            label: "1 Task",
+                            star: "1-task",
+                          },
+                          {
+                            value: "avatar:5",
+                            label: "5 Tasks",
+                            star: "5-tasks",
+                          },
+                          {
+                            value: "avatar:10",
+                            label: "10 Tasks",
+                            star: "10-tasks",
+                          },
+                          {
+                            value: "avatar:15",
+                            label: "15 Tasks",
+                            star: "15-tasks",
+                          },
+                          {
+                            value: "avatar:25",
+                            label: "25 Tasks",
+                            star: "25-tasks",
+                          },
+                          {
+                            value: "avatar:50",
+                            label: "50 Tasks",
+                            star: "50-tasks",
+                          },
+                        ].map((option) => {
+                          const isSelected =
+                            selectedBadges.includes(option.value) ||
+                            (option.value === "avatar:default" &&
+                              !selectedBadges.some((b) =>
+                                b.startsWith("avatar:"),
+                              ));
+
+                          return (
+                            <button
+                              key={option.value}
+                              onClick={() => {
+                                const filtered = selectedBadges.filter(
+                                  (b) => !b.startsWith("avatar:"),
+                                );
+                                if (option.value !== "avatar:default") {
+                                  setSelectedBadges([
+                                    ...filtered,
+                                    option.value,
+                                  ]);
+                                } else {
+                                  setSelectedBadges(filtered);
+                                }
+                              }}
+                              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left transition-colors ${
+                                isSelected
+                                  ? "bg-muted border border-primary"
+                                  : "hover:bg-muted/50 border border-transparent"
+                              }`}
+                            >
+                              {option.star ? (
+                                <BadgeSvg
+                                  badgeKey={option.star}
+                                  title={option.label}
+                                  className="w-5 h-5"
+                                />
+                              ) : (
+                                <div className="w-5 h-5 rounded-full bg-muted flex items-center justify-center">
+                                  <Users className="w-3.5 h-3.5 text-muted-foreground" />
+                                </div>
+                              )}
+
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">
+                                  {option.label}
+                                </div>
+                              </div>
+
+                              {isSelected && (
+                                <div className="text-primary text-sm flex-shrink-0">
+                                  ✓
+                                </div>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-2">
+                        This overrides the automatic star based on completed
+                        bounties.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex justify-end gap-3 p-6 pt-4 flex-shrink-0 border-t border-border">
+                  <Button
+                    variant="outline"
+                    onClick={closeBadgeModal}
+                    disabled={isSavingBadges}
+                  >
+                    Cancel
+                  </Button>
+                  {selectedUserForBadges && (
+                    <Button onClick={saveUserBadges} disabled={isSavingBadges}>
+                      {isSavingBadges ? "Saving..." : "Save Changes"}
+                    </Button>
+                  )}
+                </div>
               </div>
-            )}
-
-            <div className="flex-1 min-w-0">
-              <div className="text-sm font-medium">{option.label}</div>
             </div>
-
-            {isSelected && (
-              <div className="text-primary text-sm flex-shrink-0">✓</div>
-            )}
-          </button>
-        );
-      })}
-    </div>
-    <p className="text-xs text-muted-foreground mt-2">
-      This overrides the automatic star based on completed bounties.
-    </p>
-  </div>
-)}
-
-      {/* Action Buttons */}
-      <div className="flex justify-end gap-3">
-        <Button
-          variant="outline"
-          onClick={closeBadgeModal}
-          disabled={isSavingBadges}
-        >
-          Cancel
-        </Button>
-        {selectedUserForBadges && (
-          <Button onClick={saveUserBadges} disabled={isSavingBadges}>
-            {isSavingBadges ? "Saving..." : "Save Changes"}
-          </Button>
-        )}
-      </div>
-    </div>
-  </div>
-)}
+          )}
         </div>
       </main>
     </ProtectedRoute>

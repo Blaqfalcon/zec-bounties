@@ -67,6 +67,7 @@ import { formatStatus } from "@/lib/utils";
 import { format } from "date-fns";
 import { GlobalSettingsModal } from "@/components/settings/global-settings-modal";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
+import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
 import { AuthorizePaymentPanel } from "@/components/payments/authorize-payment-panel";
 import { useRoleGuard } from "@/hooks/use-role-guard";
 import { EditBountyModal } from "@/components/admin/edit-bounty-modal";
@@ -238,6 +239,8 @@ export default function AdminDashboard() {
     paymentChain,
     paymentServerUrl,
     fetchTransactionHashes,
+    paymentRecords,
+    fetchPaymentRecords,
     allSubmissions,
     fetchAllSubmissions,
     totalActiveCount,
@@ -272,6 +275,8 @@ export default function AdminDashboard() {
   const [chainFilter, setChainFilter] = useState<"MAIN" | "TEST">("MAIN");
   const [showCancelledBounties, setShowCancelledBounties] = useState(false);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
+  const [searchQuery, setSearchQuery] = useState("");
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
@@ -293,12 +298,22 @@ export default function AdminDashboard() {
       result = result.filter((b) => b.categoryId === categoryFilter);
     }
 
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (b) =>
+          b.title.toLowerCase().includes(q) ||
+          b.createdByUser?.name?.toLowerCase().includes(q),
+      );
+    }
+
     return result;
   }, [
     chainFilteredBounties,
     bountyStatusFilter,
     showCancelledBounties,
     categoryFilter,
+    searchQuery,
   ]);
 
   const activeCategoryLabel =
@@ -319,6 +334,27 @@ export default function AdminDashboard() {
     setShowCancelledBounties(false);
   };
 
+  const loadMoreSentinelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!hasMoreBounties) return;
+
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !bountiesLoading) {
+          loadMoreBounties();
+        }
+      },
+      { rootMargin: "600px" },
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [hasMoreBounties, bountiesLoading, loadMoreBounties]);
+
   const handleStatusChange = async (
     bountyId: string,
     newStatus: BountyStatus,
@@ -336,9 +372,9 @@ export default function AdminDashboard() {
     if (assigneeCount === 0) {
       const createdByUser = bounty.createdByUser;
       const hasLegacyAssignee = !!bounty.assigneeUser;
-      const createdByClient = createdByUser?.role === "CLIENT";
+      const createdByHunter = createdByUser?.role === "HUNTER";
 
-      if (hasLegacyAssignee && createdByClient) {
+      if (hasLegacyAssignee && createdByHunter) {
         try {
           await updateBountyStatus(bountyId, "DONE");
         } catch (err) {
@@ -465,7 +501,7 @@ export default function AdminDashboard() {
   const handleFetchTransactionHashes = async () => {
     setIsFetchingTxHashes(true);
     try {
-      await fetchTransactionHashes();
+      await Promise.all([fetchTransactionHashes(), fetchPaymentRecords()]);
     } catch (error) {
       console.error("Failed to fetch transaction hashes:", error);
     } finally {
@@ -473,9 +509,19 @@ export default function AdminDashboard() {
     }
   };
 
+  // The tab used to sit empty until someone clicked Refresh, which made it
+  // useless for verifying a payout you just sent.
+  useEffect(() => {
+    if (activeTab === "txids") {
+      fetchPaymentRecords();
+      fetchTransactionHashes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
   const totalRewards = totalBountyAmount;
   const activeBountiesAmount = totalActiveCount;
-  const totalHunters = nonAdminUsers.filter((u) => u.role === "CLIENT").length;
+  const totalHunters = nonAdminUsers.filter((u) => u.role === "HUNTER").length;
   const completedBounties = bounties.filter(
     (b) => b.status === "DONE" && !b.isPaid,
   );
@@ -508,7 +554,11 @@ export default function AdminDashboard() {
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
-        <AdminNavbar isAdmin={true} />
+        <AdminNavbar
+          isAdmin={true}
+          searchQuery={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
 
         {/* ---------------------------------------------------------- */}
         {/* Sticky command bar: identity + environment + primary action */}
@@ -1210,29 +1260,18 @@ export default function AdminDashboard() {
                   </Table>
 
                   {hasMoreBounties && (
-                    <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-3 sm:px-6">
-                      <span className="text-xs text-muted-foreground">
-                        Showing {filteredBounties.length} bounties
-                      </span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-2"
-                        onClick={loadMoreBounties}
-                        disabled={bountiesLoading}
-                      >
-                        {bountiesLoading ? (
-                          <>
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                            Loading…
-                          </>
-                        ) : (
-                          <>
-                            <RefreshCw className="h-3.5 w-3.5" />
-                            Load more
-                          </>
-                        )}
-                      </Button>
+                    <div
+                      ref={loadMoreSentinelRef}
+                      className="flex items-center justify-center gap-2 border-t border-border px-4 py-3 text-xs text-muted-foreground sm:px-6"
+                    >
+                      {bountiesLoading ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          Loading more…
+                        </>
+                      ) : (
+                        <span>Showing {filteredBounties.length} bounties</span>
+                      )}
                     </div>
                   )}
                 </CardContent>
@@ -1271,47 +1310,112 @@ export default function AdminDashboard() {
           />
 
           {activeTab === "txids" && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h2 className="text-base font-semibold">
-                    Transaction History
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    {paymentIDs?.length || 0} recorded transactions
-                  </p>
+            <div className="space-y-3">
+              {/* Sub-tabs: now a standalone segmented control above the card */}
+              <div className="-mx-3 overflow-x-auto px-3 sam:-mx-4 sam:px-4 imd:mx-0 imd:overflow-visible imd:px-0 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="inline-flex w-max min-w-full items-center gap-1 rounded-lg border bg-muted/40 p-1 imd:w-auto">
+                  <button
+                    onClick={() => setTxSubTab("wallet")}
+                    className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sam:gap-2 imd:text-sm ${
+                      txSubTab === "wallet"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <RefreshCw className="h-4 w-4 shrink-0" />
+                    <span>Wallet History</span>
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                      {paymentIDs?.length || 0}
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => setTxSubTab("payouts")}
+                    className={`relative flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1.5 text-xs font-medium transition-colors sam:gap-2 imd:text-sm ${
+                      txSubTab === "payouts"
+                        ? "bg-background text-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    <CreditCard className="h-4 w-4 shrink-0" />
+                    <span>Bounty Payouts</span>
+                    <span className="ml-0.5 inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-muted px-1.5 text-[11px] font-semibold text-muted-foreground">
+                      {paymentRecords.length}
+                    </span>
+                  </button>
                 </div>
-                <Button
-                  onClick={handleFetchTransactionHashes}
-                  disabled={isFetchingTxHashes}
-                  size="sm"
-                  variant="outline"
-                  className="gap-2"
-                >
-                  {isFetchingTxHashes ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RefreshCw className="h-4 w-4" />
-                  )}
-                  {isFetchingTxHashes ? "Fetching..." : "Refresh"}
-                </Button>
               </div>
 
-              {paymentIDs && paymentIDs.length > 0 ? (
-                <PaymentTxIdsTable
-                  paymentIDs={paymentIDs}
-                  chain={paymentChain}
-                  serverUrl={paymentServerUrl}
-                />
-              ) : (
-                <div className="flex flex-col items-center rounded-xl border border-dashed py-16 text-center">
-                  <RefreshCw className="mb-3 h-9 w-9 text-muted-foreground/40" />
-                  <h3 className="text-sm font-medium">No payments processed</h3>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    No transaction IDs available at this time.
-                  </p>
-                </div>
-              )}
+              <Card className="overflow-hidden border-muted bg-card/50 gap-0">
+                <CardHeader className="flex flex-col imd:block gap-4 border-b p-3 sam:p-4 imd:p-5">
+                  <div className="flex flex-col gap-4 imd:flex-row imd:items-start imd:justify-between">
+                    <div className="min-w-0">
+                      <CardTitle className="text-sm sam:text-base">
+                        Transactions
+                      </CardTitle>
+                      <CardDescription className="text-xs imd:text-sm">
+                        {txSubTab === "wallet"
+                          ? "Everything seen by your default wallet"
+                          : "The app's own ledger, linked to bounties"}
+                      </CardDescription>
+                    </div>
+
+                    {txSubTab === "payouts" && (
+                      <Button
+                        onClick={handleFetchTransactionHashes}
+                        disabled={isFetchingTxHashes}
+                        size="sm"
+                        variant="outline"
+                        className="w-full gap-2 sam:w-auto imd:shrink-0"
+                      >
+                        {isFetchingTxHashes ? (
+                          <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4 shrink-0" />
+                        )}
+                        {isFetchingTxHashes ? "Fetching..." : "Refresh"}
+                      </Button>
+                    )}
+                  </div>
+                </CardHeader>
+
+                <CardContent className="p-0">
+                  {txSubTab === "wallet" ? (
+                    paymentIDs && paymentIDs.length > 0 ? (
+                      <div className="w-full max-w-full overflow-x-auto">
+                        <PaymentTxIdsTable
+                          paymentIDs={paymentIDs}
+                          chain={paymentChain}
+                          serverUrl={paymentServerUrl}
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center px-4 py-12 text-center imd:py-16">
+                        <RefreshCw className="mb-3 h-8 w-8 text-muted-foreground/40 imd:h-9 imd:w-9" />
+                        <h3 className="text-sm font-medium">
+                          No wallet history loaded
+                        </h3>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Refresh to query the wallet.
+                        </p>
+                      </div>
+                    )
+                  ) : paymentRecords.length > 0 ? (
+                    <div className="w-full max-w-full overflow-x-auto">
+                      <PaymentRecordsTable records={paymentRecords} />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center px-4 py-12 text-center imd:py-16">
+                      <CreditCard className="mb-3 h-8 w-8 text-muted-foreground/40 imd:h-9 imd:w-9" />
+                      <h3 className="text-sm font-medium">
+                        No payout records yet
+                      </h3>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        Completed bounty payouts will show up here.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
           )}
         </div>

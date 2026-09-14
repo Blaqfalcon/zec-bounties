@@ -7,141 +7,26 @@ import { Navbar } from "@/components/layout/navbar";
 import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { backendUrl } from "@/lib/configENV";
-import { PublicUserProfile } from "@/lib/types";
+import { ProfileChain, PublicUserProfile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import {
   Loader2,
-  Users,
-  Shield,
-  Server,
-  Pickaxe,
-  BookOpen,
   Lock,
   Github,
   ArrowLeft,
-  TreeDeciduous,
-  Leaf,
-  Ban,
-  AlertTriangle,
   Settings,
 } from "lucide-react";
-import { cn, fmt } from "@/lib/utils";
+import { BadgeIcons } from "@/components/badges/badge-icons";
+import { UaReceiverIcons } from "@/components/address/ua-receiver-icons";
+import { fmt } from "@/lib/utils";
 import {
   initAddressDecoder,
   getAddressReceivers,
   isDecoderReady,
 } from "@/lib/decodeAddress";
-
-function BadgeIcons({
-  completed = 0,
-  badges = [],
-  role,
-}: {
-  completed?: number;
-  badges?: string[];
-  role?: string;
-}) {
-  const list = Array.isArray(badges) ? badges : [];
-  let badgeClass = "text-muted-foreground";
-  const avatarOverride = list.find((b) => b.startsWith("avatar:"));
-  if (avatarOverride === "avatar:red") badgeClass = "text-red-500";
-  else if (avatarOverride === "avatar:blue") badgeClass = "text-blue-500";
-  else if (avatarOverride === "avatar:purple") badgeClass = "text-purple-500";
-  else if (avatarOverride === "avatar:gold") badgeClass = "text-yellow-500";
-  else if (avatarOverride === "avatar:pink") badgeClass = "text-pink-500";
-  else if (completed >= 60) badgeClass = "text-pink-500";
-  else if (completed >= 20) badgeClass = "text-yellow-500";
-  else if (completed >= 10) badgeClass = "text-purple-500";
-  else if (completed >= 5) badgeClass = "text-blue-500";
-  else if (completed >= 1) badgeClass = "text-red-500";
-
-  return (
-    <div className="flex flex-wrap items-center gap-2">
-      <span title="Member">
-        <Users className={cn("w-5 h-5", badgeClass)} />
-      </span>
-      {(role === "ADMIN" || list.includes("admin")) && (
-        <span title="Admin" className="text-purple-500">
-          <Shield className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("dao-member") && (
-        <span title="DAO Member">
-          <img src="/ZecHubBlue.png" alt="ZecHub" className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("node-runner") && (
-        <span title="Node Runner" className="text-blue-500">
-          <Server className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("miner") && (
-        <span title="Miner" className="text-orange-500">
-          <Pickaxe className="w-5 h-5" />
-        </span>
-      )}
-      {list.includes("researcher") && (
-        <span title="Researcher" className="text-emerald-500">
-          <BookOpen className="w-5 h-5" />
-        </span>
-      )}
-    </div>
-  );
-}
-
-function AddressTypeIcons({
-  receivers,
-}: {
-  receivers?: {
-    ironwood?: boolean;
-    sapling?: boolean;
-    transparent?: boolean;
-  };
-}) {
-  if (
-    !receivers ||
-    (!receivers.ironwood && !receivers.sapling && !receivers.transparent)
-  ) {
-    return (
-      <div className="flex items-center justify-center gap-2 text-red-500">
-        <Ban className="w-6 h-6" />
-        <span className="text-sm">None</span>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex items-center justify-center gap-3">
-      {receivers.transparent && (
-        <div
-          title="Transparent"
-          className="flex items-center justify-center w-9 h-9 text-yellow-400"
-        >
-          <AlertTriangle className="w-9 h-9" />
-        </div>
-      )}
-      {receivers.sapling && (
-        <div
-          title="Sapling"
-          className="flex items-center justify-center w-9 h-9 text-emerald-400"
-        >
-          <Leaf className="w-9 h-9" />
-        </div>
-      )}
-      {receivers.ironwood && (
-        <div
-          title="Ironwood"
-          className="flex items-center justify-center w-9 h-9 rounded-full bg-zinc-700 border-2 border-zinc-300"
-        >
-          <TreeDeciduous className="w-9 h-9 text-zinc-200" />
-        </div>
-      )}
-    </div>
-  );
-}
 
 function PrivatePlaceholder({ label }: { label: string }) {
   return (
@@ -166,6 +51,7 @@ export default function PublicUserProfilePage() {
     sapling?: boolean;
     transparent?: boolean;
   } | null>(null);
+  const [chain, setChain] = useState<ProfileChain>("MAIN");
 
   // Load profile when user id/nickname changes
   useEffect(() => {
@@ -261,6 +147,32 @@ export default function PublicUserProfilePage() {
     !!profile?.isOwner ||
     !!(currentUser && profile && currentUser.id === profile.id);
 
+
+  const chainStats = profile?.statsByChain?.[chain];
+  const completed = chainStats?.completed ?? profile?.completed ?? 0;
+  const created = chainStats?.created ?? profile?.created ?? 0;
+  const totalEarned = chainStats?.totalEarned ?? profile?.totalEarned ?? 0;
+  const completionRate =
+    chainStats?.completionRate ?? profile?.completionRate ?? null;
+  const recentCompleted =
+    chainStats?.recentCompleted ?? profile?.recentCompleted ?? [];
+  const recentCreated =
+    chainStats?.recentCreated ?? profile?.recentCreated ?? [];
+  const badgeCompleted =
+    (profile?.statsByChain?.MAIN?.completed ?? profile?.completed ?? 0) +
+    (profile?.statsByChain?.TEST?.completed ?? 0);
+
+  const roleLabel =
+    profile?.role === "HUNTER"
+      ? "Hunter"
+      : profile?.role === "TEAM"
+        ? "Team"
+        : profile?.role === "ADMIN"
+          ? "Admin"
+          : profile?.role === "CLIENT"
+            ? "Client"
+            : profile?.role;
+
   return (
     <ProtectedRoute>
       <main className="min-h-screen bg-background">
@@ -329,9 +241,34 @@ export default function PublicUserProfilePage() {
                         {profile.displayName || "Anonymous contributor"}
                       </h1>
 
-                      {v?.showRole && profile.role && (
-                        <Badge variant="secondary">{profile.role}</Badge>
-                      )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {v?.showRole && profile.role && (
+                          <Badge variant="secondary">{roleLabel}</Badge>
+                        )}
+                        {profile.teams && profile.teams.length > 0 &&
+                          profile.teams.map((team) => (
+                            <Link
+                              key={team.id}
+                              href={`/teams/${team.id}`}
+                              className="inline-flex items-center gap-1.5"
+                            >
+                              <Badge variant="outline" className="gap-1.5">
+                                {team.logo ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img
+                                    src={team.logo}
+                                    alt=""
+                                    className="h-3.5 w-3.5 rounded-sm object-cover"
+                                  />
+                                ) : null}
+                                {team.name}
+                                <span className="text-[10px] text-muted-foreground">
+                                  {team.memberRole}
+                                </span>
+                              </Badge>
+                            </Link>
+                          ))}
+                      </div>
 
                       {v?.showMemberSince && profile.memberSince && (
                         <p className="text-sm text-muted-foreground">
@@ -358,7 +295,7 @@ export default function PublicUserProfilePage() {
                       {v?.showBadges && profile.badges ? (
                         <div className="pt-1">
                           <BadgeIcons
-                            completed={profile.completed}
+                            completed={badgeCompleted}
                             badges={profile.badges}
                             role={profile.role}
                           />
@@ -394,6 +331,29 @@ export default function PublicUserProfilePage() {
                 </CardContent>
               </Card>
 
+              <div className="flex items-center justify-end">
+                <div className="inline-flex rounded-md border p-0.5">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={chain === "MAIN" ? "default" : "ghost"}
+                    className="h-7 px-3 text-xs"
+                    onClick={() => setChain("MAIN")}
+                  >
+                    Mainnet
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={chain === "TEST" ? "default" : "ghost"}
+                    className="h-7 px-3 text-xs"
+                    onClick={() => setChain("TEST")}
+                  >
+                    Testnet
+                  </Button>
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <Card>
                   <CardContent className="pt-4 pb-4">
@@ -402,7 +362,7 @@ export default function PublicUserProfilePage() {
                     </p>
                     {v?.showCompleted ? (
                       <p className="text-2xl font-bold tabular-nums">
-                        {profile.completed ?? 0}
+                        {completed}
                       </p>
                     ) : (
                       <PrivatePlaceholder label="Completed" />
@@ -416,7 +376,7 @@ export default function PublicUserProfilePage() {
                     </p>
                     {v?.showCreated ? (
                       <p className="text-2xl font-bold tabular-nums">
-                        {profile.created ?? 0}
+                        {created}
                       </p>
                     ) : (
                       <PrivatePlaceholder label="Created" />
@@ -430,7 +390,7 @@ export default function PublicUserProfilePage() {
                     </p>
                     {v?.showEarnings ? (
                       <p className="text-2xl font-bold tabular-nums">
-                        {fmt(profile.totalEarned ?? 0)} ZEC
+                        {fmt(totalEarned)} ZEC
                       </p>
                     ) : (
                       <PrivatePlaceholder label="Earnings" />
@@ -444,8 +404,8 @@ export default function PublicUserProfilePage() {
                     </p>
                     {v?.showCompletionRate ? (
                       <p className="text-2xl font-bold tabular-nums">
-                        {profile.completionRate != null
-                          ? `${profile.completionRate}%`
+                        {completionRate != null
+                          ? `${completionRate}%`
                           : "—"}
                       </p>
                     ) : (
@@ -461,7 +421,7 @@ export default function PublicUserProfilePage() {
                 </CardHeader>
                 <CardContent>
                   {v?.showAddressType ? (
-                    <AddressTypeIcons
+                    <UaReceiverIcons
                       receivers={
                         receivers ?? {
                           ironwood: false,
@@ -490,17 +450,16 @@ export default function PublicUserProfilePage() {
                         <p className="text-xs font-medium text-muted-foreground mb-2">
                           Recently completed
                         </p>
-                        {profile.recentCompleted &&
-                        profile.recentCompleted.length > 0 ? (
+                        {recentCompleted.length > 0 ? (
                           <ul className="space-y-2">
-                            {profile.recentCompleted.map((b) => (
+                            {recentCompleted.map((b) => (
                               <li
                                 key={b.id}
                                 className="flex justify-between gap-3 text-sm border-b border-border/50 pb-2 last:border-0"
                               >
                                 <span className="truncate">{b.title}</span>
                                 <span className="tabular-nums text-muted-foreground shrink-0">
-                                  {fmt(b.bountyAmount)} ZEC
+                                  {b.bountyAmount != null ? `${fmt(b.bountyAmount)} ZEC` : ""}
                                 </span>
                               </li>
                             ))}
@@ -515,10 +474,9 @@ export default function PublicUserProfilePage() {
                         <p className="text-xs font-medium text-muted-foreground mb-2">
                           Recently created
                         </p>
-                        {profile.recentCreated &&
-                        profile.recentCreated.length > 0 ? (
+                        {recentCreated.length > 0 ? (
                           <ul className="space-y-2">
-                            {profile.recentCreated.map((b) => (
+                            {recentCreated.map((b) => (
                               <li
                                 key={b.id}
                                 className="flex justify-between gap-3 text-sm border-b border-border/50 pb-2 last:border-0"

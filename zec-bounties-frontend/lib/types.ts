@@ -40,6 +40,26 @@ export interface ProfileVisibility {
   showGithub?: boolean;
 }
 
+export type ProfileChain = "MAIN" | "TEST";
+
+export interface ProfileChainStats {
+  completed: number;
+  created: number;
+  submitted: number;
+  totalEarned: number;
+  completionRate: number | null;
+  recentCompleted?: PublicUserProfile["recentCompleted"];
+  recentCreated?: PublicUserProfile["recentCreated"];
+}
+
+export interface PublicUserTeam {
+  id: string;
+  name: string;
+  logo?: string | null;
+  isVerified?: boolean;
+  memberRole: string;
+}
+
 export interface PublicUserProfile {
   id: string;
   visibility: Required<ProfileVisibility>;
@@ -52,6 +72,8 @@ export interface PublicUserProfile {
   bio?: string | null;
   badges?: string[];
   role?: UserRole;
+  teams?: PublicUserTeam[];
+  statsByChain?: Record<ProfileChain, ProfileChainStats>;
   memberSince?: string | Date;
   githubId?: string;
   githubUsername?: string;
@@ -88,6 +110,7 @@ export interface PublicUserProfile {
     submitted: number;
     totalEarned: number;
     completionRate: number | null;
+    byChain?: Record<ProfileChain, ProfileChainStats>;
   };
 }
 
@@ -125,6 +148,9 @@ export interface Bounty {
   paymentBatchId?: string;
   paidAt?: Date;
   paymentTxId?: string;
+  // True while a send is in flight or its outcome is unknown — the bounty is
+  // locked out of the payable set server-side until it settles.
+  paymentInFlight?: boolean;
   createdByUser?: User; // Populated user data
   assigneeUser?: User; // Populated user data
   applications?: BountyApplication[];
@@ -135,6 +161,31 @@ export interface Bounty {
   assignees?: BountyAssignee[];
   teamId?: string | null;
   team?: { id: string; name: string; logo?: string | null } | null;
+}
+
+// One row per bounty per payout attempt, from /api/transactions/records.
+// PENDING/UNKNOWN rows are unsettled sends that need manual resolution.
+export interface PaymentRecord {
+  id: string;
+  bountyId: string;
+  txid: string | null;
+  amountZat: number;
+  toAddress: string;
+  memo: string;
+  chain: "MAIN" | "TEST";
+  status: "PENDING" | "BROADCAST" | "FAILED" | "UNKNOWN";
+  batchKey: string;
+  initiatedBy: string;
+  walletAccount: string;
+  errorDetail?: string | null;
+  createdAt: string;
+  settledAt?: string | null;
+  bounty?: {
+    id: string;
+    title: string;
+    chain: "MAIN" | "TEST";
+    assigneeUser?: { id: string; name: string; nickname?: string | null };
+  };
 }
 
 export interface BountyFormData {
@@ -345,6 +396,7 @@ export interface TopContributor extends User {
     sapling?: boolean | undefined;
     transparent?: boolean | undefined;
   };
+  showEarnings: boolean;
 }
 
 export interface ContributorsOverTime {

@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -24,7 +24,8 @@ import {
 } from "@/components/ui/select";
 import { useBounty } from "@/lib/bounty-context";
 import type { BountyFormData } from "@/lib/types";
-import { Loader2 } from "lucide-react";
+import { Loader2, Plus, Clock, Tag, AlignLeft } from "lucide-react";
+import { SiZcash } from "react-icons/si";
 import { toast } from "sonner";
 import { toDateInputValue, parseDateInputValue } from "@/lib/utils";
 
@@ -49,16 +50,15 @@ export function NewBountyModal({
 }: CreateBountyFormProps) {
   const {
     createBounty,
-    users,
-    nonAdminUsers,
-    usersLoading,
     currentUser,
     categories,
+    bountyQuota,
+    fetchBountyQuota,
   } = useBounty();
-  const [formData, setFormData] = useState<BountyFormData>({
+
+  const [formData, setFormData] = useState({
     title: "",
     description: "",
-    assignee: "none",
     bountyAmount: 0,
     timeToComplete: new Date(),
     category: "",
@@ -67,21 +67,37 @@ export function NewBountyModal({
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [errorSummary, setErrorSummary] = useState("");
   const openerRef = useRef<HTMLElement | null>(null);
-
   const clearFieldError = (field: keyof FieldErrors) => {
-    setFieldErrors((prev) => {
-      if (!prev[field]) return prev;
+  setFieldErrors((prev) => {
+    if (!prev[field]) return prev;
 
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
+    const next = { ...prev };
+    delete next[field];
+    return next;
+  });
 
-    setErrorSummary("");
+  setErrorSummary("");
   };
 
-  const validateForm = () => {
+  useEffect(() => {
+  if (open) fetchBountyQuota();
+  }, [open]);
+
+  const isAdmin = currentUser?.role === "ADMIN";
+  const atLimit =
+  !isAdmin && bountyQuota?.remaining !== null && bountyQuota?.remaining === 0;
+
+    const validateForm = () => {
     const nextErrors: FieldErrors = {};
+
+    if (atLimit) {
+      toast.error("Weekly bounty limit reached", {
+        description: `You've used your ${bountyQuota?.limit} bount${
+          bountyQuota?.limit === 1 ? "y" : "ies"
+        } for this week.`,
+      });
+      return;
+    }
 
     if (!formData.title.trim()) {
       nextErrors.title = "Enter a bounty title.";
@@ -139,7 +155,6 @@ export function NewBountyModal({
       setFormData({
         title: "",
         description: "",
-        assignee: "none",
         bountyAmount: 0,
         timeToComplete: new Date(),
         category: "",
@@ -162,45 +177,52 @@ export function NewBountyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="sm:max-w-[500px]"
-        onOpenAutoFocus={() => {
-          if (
-            document.activeElement instanceof HTMLElement &&
-            document.activeElement !== document.body
-          ) {
-            openerRef.current = document.activeElement;
-          }
-        }}
-        onCloseAutoFocus={(event) => {
-          if (!openerRef.current) return;
+      <DialogContent className="max-h-[92vh] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto rounded-2xl border p-0 shadow-xl">
+        <form
+          onSubmit={handleSubmit}
+          className="flex flex-col max-h-[70vh] imd:max-h-full"
+        >
+          <DialogHeader className="space-y-3 border-b border-border px-5 py-5 text-left sam:px-6 sam:py-6">
+            <div className="space-y-1">
+              <DialogTitle className="flex items-center gap-2.5 text-lg font-semibold tracking-tight sam:text-xl">
+                <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-primary/10 text-primary">
+                  <Plus className="h-4 w-4" />
+                </span>
+                Create New Bounty
+              </DialogTitle>
+              <DialogDescription className="text-sm text-muted-foreground">
+                Provide the details for your technical challenge.
+              </DialogDescription>
+            </div>
 
-          event.preventDefault();
-          openerRef.current.focus();
-          openerRef.current = null;
-        }}
-      >
-        <form onSubmit={handleSubmit} noValidate>
-          <DialogHeader>
-            <DialogTitle>Create New Bounty</DialogTitle>
-            <DialogDescription>
-              Provide the details for your technical challenge.
-            </DialogDescription>
+            {!isAdmin && bountyQuota && (
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    (bountyQuota.remaining ?? 0) > 0
+                      ? "bg-emerald-500"
+                      : "bg-destructive"
+                  }`}
+                />
+                {(bountyQuota.remaining ?? 0) > 0
+                  ? `${bountyQuota.remaining} of ${bountyQuota.limit} bount${
+                      bountyQuota.limit === 1 ? "y" : "ies"
+                    } left this week.`
+                  : "You've reached your weekly bounty limit."}
+              </div>
+            )}
           </DialogHeader>
 
-          {errorSummary && (
-            <div
-              role="alert"
-              aria-live="assertive"
-              className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
-            >
-              {errorSummary}
-            </div>
-          )}
-
-          <div className="grid gap-4 py-4">
-            <div className="grid gap-2">
-              <Label htmlFor="title">Bounty Title</Label>
+          <div className="grid gap-5 px-5 py-5 sam:gap-6 sam:px-6 sam:py-6">
+            {/* Title */}
+            <div className="space-y-2">
+              <Label
+                htmlFor="title"
+                className="flex items-center gap-2 text-sm font-medium"
+              >
+                <AlignLeft className="h-3.5 w-3.5 text-muted-foreground" />
+                Bounty Title
+              </Label>
               <Input
                 id="title"
                 value={formData.title}
@@ -213,6 +235,7 @@ export function NewBountyModal({
                 aria-invalid={Boolean(fieldErrors.title)}
                 aria-describedby={fieldErrors.title ? "title-error" : undefined}
                 required
+                className="h-11 rounded-xl"
               />
               {fieldErrors.title && (
                 <p id="title-error" className="text-sm text-destructive">
@@ -220,9 +243,17 @@ export function NewBountyModal({
                 </p>
               )}
             </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="grid gap-2">
-                <Label htmlFor="category">Category</Label>
+
+            {/* Category + Reward */}
+            <div className="grid grid-cols-1 gap-5 imd:grid-cols-2">
+              <div className="space-y-2">
+                <Label
+                  htmlFor="category"
+                  className="flex items-center gap-2 text-sm font-medium"
+                >
+                  <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                  Category
+                </Label>
                 <Select
                   value={formData.category}
                   onValueChange={(value) => {
@@ -233,12 +264,13 @@ export function NewBountyModal({
                 >
                   <SelectTrigger
                     id="category"
+                    className="h-11 rounded-xl"
                     aria-invalid={Boolean(fieldErrors.category)}
                     aria-describedby={
                       fieldErrors.category ? "category-error" : undefined
                     }
                   >
-                    <SelectValue placeholder="Select" />
+                    <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
                     {categories.map((category, index) => (
@@ -254,14 +286,22 @@ export function NewBountyModal({
                   </p>
                 )}
               </div>
-              <div className="grid gap-2">
-                <Label htmlFor="reward">Reward (ZEC)</Label>
+
+              <div className="space-y-2">
+                <Label
+                  htmlFor="reward"
+                  className="flex items-center gap-2 text-sm font-medium"
+                >
+                  <SiZcash className="h-3.5 w-3.5 text-muted-foreground" />
+                  Reward (ZEC)
+                </Label>
                 <Input
                   id="reward"
                   type="number"
-                  step="any"
-                  value={formData.bountyAmount}
-                  onChange={(e) => {
+                  step="0.01"
+                  min="0"
+                  value={formData.bountyAmount || ""}
+                  onChange={(e) =>
                     setFormData((prev) => ({
                       ...prev,
                       bountyAmount: Number.parseFloat(e.target.value) || 0,
@@ -272,6 +312,7 @@ export function NewBountyModal({
                   aria-invalid={Boolean(fieldErrors.reward)}
                   aria-describedby={fieldErrors.reward ? "reward-error" : undefined}
                   required
+                  className="h-11 rounded-xl"
                 />
                 {fieldErrors.reward && (
                   <p id="reward-error" className="text-sm text-destructive">
@@ -280,19 +321,31 @@ export function NewBountyModal({
                 )}
               </div>
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="timeToComplete">Time to Complete</Label>
+
+            {/* Deadline */}
+            <div className="space-y-2">
+              <Label
+                htmlFor="date"
+                className="flex items-center gap-2 text-sm font-medium"
+              >
+                <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                Time to Complete
+              </Label>
               <Input
-                id="timeToComplete"
+                id="date"
                 type="date"
-                min={toDateInputValue(new Date())}
                 value={toDateInputValue(formData.timeToComplete)}
                 onChange={handleDateChange}
                 required
+                className="h-11 rounded-xl"
               />
             </div>
-            <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
+
+            {/* Description */}
+            <div className="space-y-2">
+              <Label htmlFor="description" className="text-sm font-medium">
+                Description
+              </Label>
               <Textarea
                 id="description"
                 value={formData.description}
@@ -305,12 +358,12 @@ export function NewBountyModal({
                 }}
                 placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
                 rows={4}
-                className="min-h-[100px]"
-                aria-invalid={Boolean(fieldErrors.description)}
-                aria-describedby={
-                  fieldErrors.description ? "description-error" : undefined
-                }
-                required
+                className="min-h-[120px] resize-none rounded-xl"
+                  aria-invalid={Boolean(fieldErrors.description)}
+                  aria-describedby={
+                   fieldErrors.description ? "description-error" : undefined
+                    }
+               required
               />
               {fieldErrors.description && (
                 <p id="description-error" className="text-sm text-destructive">
@@ -319,23 +372,31 @@ export function NewBountyModal({
               )}
             </div>
           </div>
-          <DialogFooter>
+
+          <DialogFooter className="flex-col-reverse gap-3 border-t border-border px-5 py-4 imd:flex-row imd:items-center imd:justify-end sam:px-6">
             {onCancel && (
               <Button
                 type="button"
                 variant="outline"
                 onClick={onCancel}
                 disabled={isSubmitting}
+                className="h-11 w-full rounded-xl px-6 w-auto"
               >
                 Cancel
               </Button>
             )}
-            <Button type="submit" disabled={isSubmitting}>
+            <Button
+              type="submit"
+              disabled={isSubmitting || atLimit}
+              className="h-11 w-full rounded-xl px-6 w-auto"
+            >
               {isSubmitting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Creating...
                 </>
+              ) : atLimit ? (
+                "Weekly limit reached"
               ) : (
                 "Create Bounty"
               )}
