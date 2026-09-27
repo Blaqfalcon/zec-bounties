@@ -138,10 +138,10 @@ export function NewBountyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto rounded-2xl border p-0 shadow-xl">
+      <DialogContent className="max-h-[92vh] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto overflow-x-hidden rounded-2xl border p-0 shadow-xl">
         <form
           onSubmit={handleSubmit}
-          className="flex flex-col max-h-[70vh] imd:max-h-full"
+          className="flex flex-col max-h-[70vh] imd:max-h-full min-w-0"
         >
           <DialogHeader className="space-y-3 border-b border-border px-5 py-5 text-left sam:px-6 sam:py-6">
             <div className="space-y-1">
@@ -275,7 +275,7 @@ export function NewBountyModal({
             </div>
 
             {/* Description */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="description" className="text-sm font-medium">
                 Description
               </Label>
@@ -290,7 +290,8 @@ export function NewBountyModal({
                 }
                 placeholder="Describe the bounty requirements, deliverables, and any specific instructions..."
                 rows={4}
-                className="min-h-[120px] resize-none rounded-xl"
+                className="min-h-[120px] w-full min-w-0 resize-none rounded-xl"
+                style={{ overflowWrap: "anywhere", wordBreak: "break-word" }}
                 required
               />
             </div>
