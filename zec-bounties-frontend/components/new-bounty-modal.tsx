@@ -137,10 +137,7 @@ export function NewBountyModal({
     return true;
   };
 
-  // Users are already filtered to exclude admins in the context
-  const availableUsers = nonAdminUsers;
-
-  const handleSubmit = async (e: React.FormEvent) => {
+   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!validateForm()) return;
@@ -177,9 +174,27 @@ export function NewBountyModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[92vh] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto overflow-x-hidden rounded-2xl border p-0 shadow-xl">
+      <DialogContent
+        className="max-h-[92vh] w-[calc(100%-1.5rem)] max-w-xl overflow-y-auto overflow-x-hidden rounded-2xl border p-0 shadow-xl"
+        onOpenAutoFocus={() => {
+          if (
+            document.activeElement instanceof HTMLElement &&
+            document.activeElement !== document.body
+          ) {
+            openerRef.current = document.activeElement;
+          }
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!openerRef.current) return;
+
+          event.preventDefault();
+          openerRef.current.focus();
+          openerRef.current = null;
+        }}
+      >
         <form
           onSubmit={handleSubmit}
+          noValidate
           className="flex flex-col max-h-[70vh] imd:max-h-full min-w-0"
         >
           <DialogHeader className="space-y-3 border-b border-border px-5 py-5 text-left sam:px-6 sam:py-6">
@@ -194,8 +209,7 @@ export function NewBountyModal({
                 Provide the details for your technical challenge.
               </DialogDescription>
             </div>
-
-            {!isAdmin && bountyQuota && (
+                {!isAdmin && bountyQuota && (
               <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-muted/50 px-3 py-1.5 text-xs font-medium text-muted-foreground">
                 <span
                   className={`h-2 w-2 rounded-full ${
@@ -211,7 +225,18 @@ export function NewBountyModal({
                   : "You've reached your weekly bounty limit."}
               </div>
             )}
-          </DialogHeader>
+
+           </DialogHeader>
+
+              {errorSummary && (
+                <div
+                  role="alert"
+                  aria-live="assertive"
+                  className="mt-4 rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive"
+                >
+                  {errorSummary}
+                </div>
+              )}
 
           <div className="grid gap-5 px-5 py-5 sam:gap-6 sam:px-6 sam:py-6">
             {/* Title */}
@@ -301,7 +326,7 @@ export function NewBountyModal({
                   step="0.01"
                   min="0"
                   value={formData.bountyAmount}
-                  onChange={(e) =>
+                  onChange={(e) => {
                     setFormData((prev) => ({
                       ...prev,
                       bountyAmount: Number.parseFloat(e.target.value) || 0,

@@ -104,7 +104,7 @@ const applicationBountyFixture = {
     id: "fixture-creator",
     name: "Fixture Creator",
     email: "creator@example.invalid",
-    role: "HUNTER",
+    role: "ADMIN",
     isRobin: false,
   },
 };
