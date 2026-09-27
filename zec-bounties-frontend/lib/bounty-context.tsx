@@ -99,6 +99,7 @@ interface BountyContextType {
   ) => Promise<RecoveryData>;
   nicknameUpdate: (nickname: string) => Promise<boolean | undefined>;
   selectRole: (role: "HUNTER" | "TEAM") => Promise<boolean>;
+  disconnectDiscord: () => Promise<boolean>;
 
   // Role switching (isRobin users only)
   switchRole: (role: "ADMIN" | "CLIENT" | "HUNTER" | "TEAM") => Promise<void>;
@@ -347,6 +348,14 @@ interface BountyContextType {
   ) => Promise<TeamWallet>;
   deleteTeamWallet: (teamId: string) => Promise<void>;
   currentTeam: Team | null;
+  teamBounties: Record<string, Bounty[]>;
+  teamBountiesLoading: Record<string, boolean>;
+  teamBountiesHasMore: Record<string, boolean>;
+  fetchTeamBounties: (
+    teamId: string,
+    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL" },
+  ) => Promise<void>;
+  loadMoreTeamBounties: (teamId: string) => Promise<void>;
   fetchTeamWalletBalance: (teamId: string) => Promise<any | null>;
   communities: Community[];
   communitiesLoading: boolean;
@@ -459,6 +468,18 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   );
   const [teams, setTeams] = useState<Team[]>([]);
   const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamBounties, setTeamBounties] = useState<Record<string, Bounty[]>>(
+    {},
+  );
+  const [teamBountiesLoading, setTeamBountiesLoading] = useState<
+    Record<string, boolean>
+  >({});
+  const [teamBountiesHasMore, setTeamBountiesHasMore] = useState<
+    Record<string, boolean>
+  >({});
+  // Ref, not state — read inside the long-lived WS message handler below
+  // without worrying about stale closures.
+  const teamBountiesPageRef = useRef<Record<string, number>>({});
 
   const [myBounties, setMyBounties] = useState<Bounty[]>([]);
   const [myBountiesLoading, setMyBountiesLoading] = useState(false);
@@ -1263,12 +1284,12 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await fetch(`${backendUrl}/api/bounties/users`, {
-        headers: getAuthHeaders(),
-      });
-
+      const endpoint =
+        currentUser?.role === "ADMIN"
+          ? `${backendUrl}/api/bounties/users/full`
+          : `${backendUrl}/api/bounties/users`;
+      const res = await fetch(endpoint, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to fetch users");
-
       const data = await res.json();
       const nonAdminUsersData = data.filter(
         (user: User) => user.role !== "ADMIN",
@@ -1409,6 +1430,85 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
     fetchBountyApplications(bountyId);
     return [];
+  };
+
+  const fetchTeamBounties = async (
+    teamId: string,
+    opts?: { reset?: boolean; chain?: "MAIN" | "TEST" | "ALL" },
+  ) => {
+    const reset = opts?.reset ?? true;
+
+    setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: true }));
+    try {
+      const page = reset ? 1 : (teamBountiesPageRef.current[teamId] ?? 1);
+      const resolvedChain =
+        opts?.chain ?? (currentUser?.role === "ADMIN" ? "ALL" : "MAIN");
+
+      const params = new URLSearchParams({
+        page: String(page),
+        limit: "50", // backend's hard cap — see note on hasMore below
+        chain: resolvedChain,
+      });
+
+      const res = await fetch(
+        `${backendUrl}/api/teams/${teamId}/bounties?${params}`,
+        { headers: getAuthHeaders() },
+      );
+      if (!res.ok) throw new Error("Failed to fetch team bounties");
+
+      const data = await res.json();
+      const incoming: Bounty[] = data.data ?? [];
+      const total: number = data.total ?? incoming.length;
+
+      setTeamBounties((prev) => {
+        const existing = reset ? [] : (prev[teamId] ?? []);
+        const existingIds = new Set(existing.map((b) => b.id));
+        const fresh = incoming.filter((b) => !existingIds.has(b.id));
+        const merged = [...existing, ...fresh];
+
+        setTeamBountiesHasMore((hprev) => ({
+          ...hprev,
+          [teamId]: incoming.length > 0 && merged.length < total,
+        }));
+
+        return { ...prev, [teamId]: merged };
+      });
+
+      teamBountiesPageRef.current[teamId] = page + 1;
+    } catch (error) {
+      console.error("Failed to fetch team bounties:", error);
+    } finally {
+      setTeamBountiesLoading((prev) => ({ ...prev, [teamId]: false }));
+    }
+  };
+
+  const loadMoreTeamBounties = async (teamId: string) => {
+    if (teamBountiesLoading[teamId] || !teamBountiesHasMore[teamId]) return;
+    await fetchTeamBounties(teamId, { reset: false });
+  };
+
+  // Used by the WS handlers below to keep a loaded team's cache in sync
+  // without needing a full refetch on every event.
+  const patchTeamBounty = (bounty: Bounty) => {
+    if (!bounty.teamId) return;
+    setTeamBounties((prev) => {
+      const list = prev[bounty.teamId!];
+      if (!list) return prev; // this team's page hasn't been loaded — skip
+      return {
+        ...prev,
+        [bounty.teamId!]: list.map((b) => (b.id === bounty.id ? bounty : b)),
+      };
+    });
+  };
+
+  const addTeamBounty = (bounty: Bounty) => {
+    if (!bounty.teamId) return;
+    setTeamBounties((prev) => {
+      const list = prev[bounty.teamId!];
+      if (!list) return prev;
+      if (list.some((b) => b.id === bounty.id)) return prev;
+      return { ...prev, [bounty.teamId!]: [bounty, ...list] };
+    });
   };
 
   const fetchTeamApplications = async (teamId: string) => {
@@ -1584,6 +1684,15 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       throw error;
     }
   };
+  const patchOneBounty = async (bountyId: string) => {
+    const fresh = await fetchBountyById(bountyId);
+    if (!fresh) return;
+    setBounties((prev) =>
+      prev.some((b) => b.id === bountyId)
+        ? prev.map((b) => (b.id === bountyId ? fresh : b))
+        : prev,
+    );
+  };
 
   const acceptApplication = async (applicationId: string) => {
     if (!currentUser) throw new Error("User not authenticated");
@@ -1610,7 +1719,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const bountyId = updatedApplication.bountyId;
 
       await fetchBountyApplications(bountyId);
-      await fetchBounties();
+      await patchOneBounty(bountyId);
 
       return updatedApplication;
     } catch (error) {
@@ -1644,7 +1753,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       const bountyId = updatedApplication.bountyId;
 
       await fetchBountyApplications(bountyId);
-      await fetchBounties();
+      await patchOneBounty(bountyId);
 
       return updatedApplication;
     } catch (error) {
@@ -1674,7 +1783,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         throw new Error(errorData.error || "Failed to submit work");
       }
 
-      await fetchBounties();
+      await patchOneBounty(bountyId);
     } catch (error) {
       console.error("Failed to submit work:", error);
       throw error;
@@ -2169,6 +2278,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 ? prev // already have it (e.g. creator's own optimistic add)
                 : [msg.payload, ...prev],
             );
+            addTeamBounty(msg.payload);
             fetchTotalStats();
             break;
 
@@ -2178,6 +2288,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 bounty.id === msg.payload.id ? msg.payload : bounty,
               ),
             );
+            patchTeamBounty(msg.payload);
             break;
 
           case "bounty_status_changed":
@@ -2186,6 +2297,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 bounty.id === msg.payload.id ? msg.payload : bounty,
               ),
             );
+            patchTeamBounty(msg.payload);
             break;
 
           case "bounty_approved":
@@ -2194,6 +2306,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 bounty.id === msg.payload.id ? msg.payload : bounty,
               ),
             );
+            patchTeamBounty(msg.payload);
             break;
 
           case "application_created":
@@ -2259,6 +2372,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                   bounty.id === msg.payload.id ? msg.payload : bounty,
                 ),
               );
+              patchTeamBounty(msg.payload);
             } else {
               fetchBounties();
               fetchPaymentRecords();
@@ -2361,6 +2475,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 bounty.id === msg.payload.id ? msg.payload : bounty,
               ),
             );
+            patchTeamBounty(msg.payload);
             break;
 
           case "bounty_paid":
@@ -2553,6 +2668,9 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
 
           case "team_bounties_privacy_changed":
             fetchBounties();
+            if (teamBountiesPageRef.current[msg.payload.teamId]) {
+              fetchTeamBounties(msg.payload.teamId);
+            }
             break;
 
           case "payment_authorized":
@@ -2874,7 +2992,14 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser) return;
 
     try {
-      const res = await fetch(`${backendUrl}/api/bounties`, {
+      // Team bounties go through the dedicated team route (recipients-scoped
+      // broadcast, team membership + verification checks, team-cache aware).
+      // Everything else still goes through the general marketplace route.
+      const url = data.teamId
+        ? `${backendUrl}/api/teams/${data.teamId}/bounties`
+        : `${backendUrl}/api/bounties`;
+
+      const res = await fetch(url, {
         method: "POST",
         headers: getAuthHeaders(),
         body: JSON.stringify({
@@ -2888,19 +3013,33 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
                 ? null
                 : currentUser.id
               : data.assignee,
-          createdBy: currentUser.id,
-          isApproved:
-            currentUser.role === "ADMIN" || !!data.teamId ? true : false,
           categoryId: data.category,
           chain: data.chain,
-          teamId: data.teamId ?? null,
+          // teamId is now in the URL for team bounties, not the body — the
+          // backend route already knows which team from req.params.
+          ...(!data.teamId && { teamId: null }),
         }),
       });
 
-      if (!res.ok) throw new Error("Failed to create bounty");
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to create bounty");
+      }
 
       const created = await res.json();
       setBounties((prev) => [created, ...prev]);
+
+      // A team bounty won't be in the global public feed for non-admins
+      // (private teams, or just not yet cached there) — make sure it shows
+      // up in the team page immediately too, same as the WS handler would.
+      if (data.teamId && teamBountiesPageRef.current[data.teamId]) {
+        setTeamBounties((prev) => {
+          const list = prev[data.teamId!] ?? [];
+          if (list.some((b) => b.id === created.id)) return prev;
+          return { ...prev, [data.teamId!]: [created, ...list] };
+        });
+      }
+
       fetchBountyQuota();
     } catch (error) {
       console.error("Failed to create bounty:", error);
@@ -3116,7 +3255,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       setApplications((prev) => [...prev, newApplication]);
       setAllApplications((prev) => [...prev, newApplication]);
 
-      await fetchBounties();
+      await patchOneBounty(bountyId);
     } catch (error) {
       console.error("Failed to apply to bounty:", error);
       throw error;
@@ -3236,6 +3375,24 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
       return true;
     } catch (error) {
       console.error("Failed to select role:", error);
+      return false;
+    }
+  };
+
+  const disconnectDiscord = async () => {
+    if (!currentUser) return false;
+    try {
+      const res = await fetch(`${backendUrl}/auth/discord`, {
+        method: "DELETE",
+        headers: getAuthHeaders(),
+      });
+      if (!res.ok) throw new Error("Failed to disconnect Discord");
+      const data = await res.json();
+      setCurrentUser(data.user);
+      localStorage.setItem("currentUser", JSON.stringify(data.user));
+      return true;
+    } catch (error) {
+      console.error("Failed to disconnect Discord:", error);
       return false;
     }
   };
@@ -3554,6 +3711,7 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         verifyRecoveryOtp,
         nicknameUpdate,
         selectRole,
+        disconnectDiscord,
         categories,
         categoriesLoading,
         fetchCategories,
@@ -3663,6 +3821,11 @@ export function BountyProvider({ children }: { children: React.ReactNode }) {
         importTeamWallet,
         deleteTeamWallet,
         currentTeam,
+        teamBounties,
+        teamBountiesLoading,
+        teamBountiesHasMore,
+        fetchTeamBounties,
+        loadMoreTeamBounties,
         editSubmission,
         rejectOtherSubmissions,
         fetchMyBounties,

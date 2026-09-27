@@ -68,7 +68,7 @@ import { ProtectedRoute } from "@/components/auth/protected-route";
 import { useBounty } from "@/lib/bounty-context";
 import { BountyStatus, WorkSubmission, Bounty } from "@/lib/types";
 import { formatStatus } from "@/lib/utils";
-import { format } from "date-fns";
+import { format, startOfWeek } from "date-fns";
 import { GlobalSettingsModal } from "@/components/settings/global-settings-modal";
 import { PaymentTxIdsTable } from "@/components/transactions/payment-tx-table";
 import { PaymentRecordsTable } from "@/components/transactions/payment-records-table";
@@ -370,6 +370,45 @@ function getAssigneeGroup(bounty: Bounty): { key: string; label: string } {
   return { key: "unassigned", label: "Unassigned" };
 }
 
+/* ------------------------------------------------------------------ */
+/* Week grouping — collapses bounties into the ISO-ish (Mon-start) week */
+/* they were created in, newest week first. "This Week" / "Last Week"   */
+/* get friendly labels; anything older gets a date range.               */
+/* ------------------------------------------------------------------ */
+
+function getWeekGroup(bounty: Bounty): {
+  key: string;
+  label: string;
+  start: Date;
+} {
+  const created = bounty.dateCreated
+    ? new Date(bounty.dateCreated)
+    : new Date(0);
+  const start = startOfWeek(created, { weekStartsOn: 1 });
+  const key = start.toISOString();
+
+  const thisWeekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
+  const diffWeeks = Math.round(
+    (thisWeekStart.getTime() - start.getTime()) / (7 * 24 * 60 * 60 * 1000),
+  );
+
+  let label: string;
+  if (diffWeeks === 0) {
+    label = "This Week";
+  } else if (diffWeeks === 1) {
+    label = "Last Week";
+  } else {
+    const end = new Date(start);
+    end.setDate(end.getDate() + 6);
+    const sameYear = start.getFullYear() === end.getFullYear();
+    label = sameYear
+      ? `${format(start, "MMM d")} – ${format(end, "MMM d, yyyy")}`
+      : `${format(start, "MMM d, yyyy")} – ${format(end, "MMM d, yyyy")}`;
+  }
+
+  return { key, label, start };
+}
+
 type BountyRow = {
   bounty: Bounty;
   appCount: number;
@@ -379,6 +418,7 @@ type BountyRow = {
 };
 
 type BountyTableRow =
+  | { type: "week"; key: string; label: string; count: number }
   | { type: "group"; key: string; label: string; count: number }
   | ({ type: "bounty" } & BountyRow);
 
@@ -449,6 +489,7 @@ export default function AdminDashboard() {
   const [txSubTab, setTxSubTab] = useState<"payouts" | "wallet">("wallet");
   const [searchQuery, setSearchQuery] = useState("");
   const [groupByAssignee, setGroupByAssignee] = useState(false);
+  const [groupByWeek, setGroupByWeek] = useState(true);
 
   // Filtered bounties for the table
   const chainFilteredBounties = useMemo(
@@ -512,15 +553,16 @@ export default function AdminDashboard() {
     [filteredBounties, getAllApplicationsForBounty, allSubmissions],
   );
 
-  // Desktop-only grouping: when enabled, collapses bounties that share the
-  // same assignee(s) under one header row with an open count. Mobile cards
-  // stay flat regardless.
+  // Desktop-only grouping: collapses bounties under week headers (by
+  // creation date, newest first) and/or assignee headers with an open
+  // count. When both are on, weeks are the outer grouping and assignees
+  // are nested inside each week. Mobile cards stay flat regardless.
   const bountyTableRows = useMemo<BountyTableRow[]>(() => {
-    if (!groupByAssignee) {
+    if (!groupByWeek && !groupByAssignee) {
       return bountyRows.map((row) => ({ type: "bounty" as const, ...row }));
     }
 
-    const sorted = [...bountyRows].sort((a, b) => {
+    const assigneeCompare = (a: BountyRow, b: BountyRow) => {
       const ga = getAssigneeGroup(a.bounty);
       const gb = getAssigneeGroup(b.bounty);
       if (ga.key === "unassigned" && gb.key !== "unassigned") return 1;
@@ -532,7 +574,68 @@ export default function AdminDashboard() {
       return a.bounty.title.localeCompare(b.bounty.title, undefined, {
         sensitivity: "base",
       });
-    });
+    };
+
+    if (groupByWeek) {
+      const weekBuckets = new Map<
+        string,
+        { label: string; rows: BountyRow[] }
+      >();
+
+      for (const row of bountyRows) {
+        const week = getWeekGroup(row.bounty);
+        if (!weekBuckets.has(week.key)) {
+          weekBuckets.set(week.key, { label: week.label, rows: [] });
+        }
+        weekBuckets.get(week.key)!.rows.push(row);
+      }
+
+      const rows: BountyTableRow[] = [];
+
+      for (const [weekKey, bucket] of weekBuckets) {
+        rows.push({
+          type: "week",
+          key: weekKey,
+          label: bucket.label,
+          count: bucket.rows.length,
+        });
+
+        if (groupByAssignee) {
+          const assigneeBuckets = new Map<
+            string,
+            { label: string; rows: BountyRow[] }
+          >();
+          for (const row of bucket.rows) {
+            const group = getAssigneeGroup(row.bounty);
+            if (!assigneeBuckets.has(group.key)) {
+              assigneeBuckets.set(group.key, { label: group.label, rows: [] });
+            }
+            assigneeBuckets.get(group.key)!.rows.push(row);
+          }
+
+          for (const [assigneeKey, aBucket] of assigneeBuckets) {
+            rows.push({
+              type: "group",
+              key: `${weekKey}::${assigneeKey}`,
+              label: aBucket.label,
+              count: aBucket.rows.length,
+            });
+            for (const row of aBucket.rows) {
+              rows.push({ type: "bounty", ...row });
+            }
+          }
+        } else {
+          for (const row of bucket.rows) {
+            rows.push({ type: "bounty", ...row });
+          }
+        }
+      }
+
+      return rows;
+    }
+
+    // Assignee-only grouping (no week grouping).
+    const sorted = [...bountyRows].sort(assigneeCompare);
 
     const counts = new Map<string, number>();
     for (const row of sorted) {
@@ -556,7 +659,9 @@ export default function AdminDashboard() {
       rows.push({ type: "bounty", ...row });
     }
     return rows;
-  }, [bountyRows, groupByAssignee]);
+  }, [bountyRows, groupByAssignee, groupByWeek]);
+
+  const groupIndentClass = groupByWeek ? "pl-8 sm:pl-10" : "pl-4 sm:pl-6";
 
   const activeCategoryLabel =
     categoryFilter === "ALL" ? "All Categories" : categoryFilter;
@@ -1283,7 +1388,25 @@ export default function AdminDashboard() {
                       <TableHeader className="sticky top-[0px] z-10 bg-muted/50 backdrop-blur">
                         <TableRow>
                           <TableHead className="py-3 pl-4 sm:pl-6">
-                            Bounty
+                            <TooltipProvider>
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <label className="inline-flex cursor-pointer select-none items-center gap-2">
+                                    <Checkbox
+                                      checked={groupByWeek}
+                                      onCheckedChange={(value) =>
+                                        setGroupByWeek(value === true)
+                                      }
+                                      aria-label="Group by week"
+                                    />
+                                    Bounty
+                                  </label>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  Group bounties by the week they were created
+                                </TooltipContent>
+                              </Tooltip>
+                            </TooltipProvider>
                           </TableHead>
                           <TableHead className="hidden sm:table-cell">
                             Status
@@ -1357,6 +1480,26 @@ export default function AdminDashboard() {
                           </TableRow>
                         ) : (
                           bountyTableRows.map((row) => {
+                            if (row.type === "week") {
+                              return (
+                                <TableRow
+                                  key={`week-${row.key}`}
+                                  className="hover:bg-transparent"
+                                >
+                                  <TableCell
+                                    colSpan={7}
+                                    className="bg-muted/60 py-2 pl-4 text-xs font-semibold text-foreground sm:pl-6"
+                                  >
+                                    {row.label}
+                                    <span className="ml-2 tabular-nums font-normal text-muted-foreground opacity-70">
+                                      {row.count}{" "}
+                                      {row.count === 1 ? "bounty" : "bounties"}
+                                    </span>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            }
+
                             if (row.type === "group") {
                               return (
                                 <TableRow
@@ -1365,7 +1508,7 @@ export default function AdminDashboard() {
                                 >
                                   <TableCell
                                     colSpan={7}
-                                    className="bg-muted/40 py-1.5 pl-4 text-xs font-medium text-muted-foreground sm:pl-6"
+                                    className={`bg-muted/40 py-1.5 text-xs font-medium text-muted-foreground ${groupIndentClass}`}
                                   >
                                     <span className="text-foreground">
                                       {row.label}

@@ -24,7 +24,9 @@ import {
   ExternalLink,
   Share2,
   Check,
+  Copy,
 } from "lucide-react";
+import { RxDiscordLogo } from "react-icons/rx";
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { useBounty } from "@/lib/bounty-context";
@@ -36,6 +38,7 @@ import {
   bountyCreatorInitial,
   bountyCreatorAvatarSrc,
 } from "@/lib/displayName";
+import { ZecToUsd } from "./ZecToUsd";
 
 interface BountyDetailModalProps {
   bounty: Bounty | null;
@@ -79,6 +82,7 @@ export function BountyDetailModal({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [now, setNow] = useState(Date.now());
   const [linkCopied, setLinkCopied] = useState(false);
+  const [copyOnlyState, setCopyOnlyState] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setNow(Date.now()), 1000);
@@ -218,6 +222,18 @@ export function BountyDetailModal({
       setLinkCopied(true);
       toast.success("Link copied to clipboard");
       setTimeout(() => setLinkCopied(false), 2000);
+    } catch {
+      toast.error("Couldn't copy link");
+    }
+  };
+
+  const handleCopyLink = async () => {
+    const url = `${window.location.origin}/bounty/${bounty.id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopyOnlyState(true);
+      toast.success("Link copied to clipboard");
+      setTimeout(() => setCopyOnlyState(false), 2000);
     } catch {
       toast.error("Couldn't copy link");
     }
@@ -450,19 +466,34 @@ export function BountyDetailModal({
             <DialogTitle className="text-lg font-semibold leading-snug flex-1">
               {bounty.title}
             </DialogTitle>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-              onClick={handleShare}
-              title="Share this bounty"
-            >
-              {linkCopied ? (
-                <Check className="h-3.5 w-3.5 text-emerald-500" />
-              ) : (
-                <Share2 className="h-3.5 w-3.5" />
-              )}
-            </Button>
+            <div className="flex items-center gap-1 shrink-0">
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleCopyLink}
+                title="Copy link"
+              >
+                {copyOnlyState ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                onClick={handleShare}
+                title="Share this bounty"
+              >
+                {linkCopied ? (
+                  <Check className="h-3.5 w-3.5 text-emerald-500" />
+                ) : (
+                  <Share2 className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            </div>
           </div>
           <DialogDescription className="flex items-center gap-3 mt-1">
             <span className="flex items-center gap-1 text-xs">
@@ -751,6 +782,22 @@ export function BountyDetailModal({
                       </p>
                     )}
                   </div>
+
+                  {/* Discord hint — soft, non-blocking */}
+                  {!currentUser?.discordUsername && (
+                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+                      <RxDiscordLogo className="h-3 w-3 flex-shrink-0" />
+                      Connect Discord on your{" "}
+                      <Link
+                        href="/profile"
+                        className="text-blue-600 dark:text-blue-400 hover:underline"
+                      >
+                        profile
+                      </Link>{" "}
+                      to get notified if you're assigned.
+                    </p>
+                  )}
+
                   <div className="flex gap-2">
                     <Button
                       size="sm"
@@ -906,10 +953,12 @@ export function BountyDetailModal({
               </p>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-2xl font-bold">
-                  {bounty.bountyAmount}
+                  {bounty.bountyAmount} ZEC
                 </span>
-                <span className="text-xs text-muted-foreground">ZEC</span>
               </div>
+              <p className="text-[10px] text-muted-foreground mt-0.5">
+                <ZecToUsd zecAmount={bounty.bountyAmount} showZec={false} />
+              </p>
               <p className="text-[10px] text-muted-foreground mt-0.5">
                 Paid upon successful review
               </p>
